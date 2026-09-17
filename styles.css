@@ -73,17 +73,29 @@ button:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(-
 .tab.is-on{color:var(--accent)}
 
 /* ---------- search ---------- */
-.searchbar{position:sticky;top:0;z-index:5;background:var(--bg);padding:4px 0 10px}
+.searchbar{position:sticky;top:env(safe-area-inset-top);z-index:5;background:var(--bg);padding:4px 0 10px}
+/* Covers the strip above the bar once it is stuck, so results cannot show
+   through the safe area and the page's own top padding. */
+.searchbar::before{
+  content:'';position:absolute;left:0;right:0;bottom:100%;
+  height:calc(env(safe-area-inset-top) + 10px);background:var(--bg);
+}
 #q{
   width:100%;appearance:none;border:1px solid var(--line);background:var(--surface);
-  color:var(--text);font:inherit;padding:13px 15px;border-radius:var(--r);
+  color:var(--text);font:inherit;font-size:1.12rem;padding:13px 46px 13px 15px;border-radius:var(--r);
 }
 #q::placeholder{color:var(--muted)}
+#q::-webkit-search-cancel-button{-webkit-appearance:none;display:none}
+.clear{
+  position:absolute;right:6px;top:4px;bottom:10px;width:42px;
+  appearance:none;border:0;background:none;color:var(--muted);
+  font-size:1.35rem;line-height:1;cursor:pointer;display:grid;place-items:center;
+}
 
 .results{display:flex;flex-direction:column}
 .result{
   appearance:none;width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);
-  color:var(--text);font:inherit;padding:14px 2px;cursor:pointer;display:flex;
+  color:var(--text);font:inherit;font-size:1rem;padding:14px 2px;cursor:pointer;display:flex;
   justify-content:space-between;align-items:baseline;gap:10px;
 }
 .result span{color:var(--muted);font-size:.78rem;flex:none}
