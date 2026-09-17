@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Sign Cards</title>
+<meta name="description" content="Flashcards for learning British Sign Language.">
+<meta name="theme-color" content="#171B29">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Sign Cards">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="apple-touch-icon" href="./icons/icon-192.png">
+<link rel="icon" href="./icons/icon-192.png">
+<link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+
+<main id="screens">
+
+  <!-- ============ SEARCH ============ -->
+  <section id="screen-search" class="screen">
+    <div class="searchbar">
+      <input id="q" type="search" inputmode="search" autocapitalize="off" autocorrect="off"
+             spellcheck="false" placeholder="Search a word" aria-label="Search for a word">
+    </div>
+    <div id="search-results" class="results"></div>
+    <div id="word-view" class="word-view" hidden></div>
+  </section>
+
+  <!-- ============ PRACTISE ============ -->
+  <section id="screen-practise" class="screen" hidden>
+    <div class="modeswitch" role="group" aria-label="Practice mode">
+      <button id="mode-productive" class="mode is-on" type="button">English first</button>
+      <button id="mode-receptive" class="mode" type="button">Sign first</button>
+    </div>
+    <div id="practice-body" class="practice"></div>
+  </section>
+
+  <!-- ============ DECK ============ -->
+  <section id="screen-deck" class="screen" hidden>
+    <header class="head">
+      <h1>Your deck</h1>
+      <p id="deck-count" class="muted"></p>
+    </header>
+    <div id="deck-list" class="deck"></div>
+  </section>
+
+  <!-- ============ MORE ============ -->
+  <section id="screen-more" class="screen" hidden>
+    <header class="head"><h1>Settings</h1></header>
+    <div class="stack">
+      <div class="panel">
+        <h2>Back up your progress</h2>
+        <p class="muted">Your deck and scores live on this phone only. Save a copy now and then.</p>
+        <div class="row">
+          <button id="btn-export" class="btn" type="button">Save a backup</button>
+          <button id="btn-import" class="btn" type="button">Restore a backup</button>
+        </div>
+        <input id="file-import" type="file" accept="application/json,.json" hidden>
+      </div>
+
+      <div class="panel">
+        <h2>Starter deck</h2>
+        <p class="muted">Around sixty everyday words to get going. Adding it again skips anything already in your deck.</p>
+        <button id="btn-starter" class="btn" type="button">Add the starter deck</button>
+      </div>
+
+      <div class="panel">
+        <h2>Scores</h2>
+        <p class="muted">Clears how well you know each card. Keeps the cards themselves.</p>
+        <button id="btn-reset" class="btn btn-quiet" type="button">Reset all scores</button>
+      </div>
+
+      <div class="panel">
+        <h2>Dictionary</h2>
+        <p id="idx-status" class="muted">Checking…</p>
+      </div>
+
+      <p class="credit">Words and videos come from <a href="https://www.signbsl.com/" target="_blank" rel="noopener">signbsl.com</a>,
+      which gathers them from the BSL community. Each video names its contributor. This app just plays them &mdash;
+      please support the original site.</p>
+    </div>
+  </section>
+
+</main>
+
+<nav id="tabs" class="tabs" aria-label="Sections">
+  <button class="tab is-on" data-screen="search" type="button"><span class="ico" aria-hidden="true">&#9906;</span>Search</button>
+  <button class="tab" data-screen="practise" type="button"><span class="ico" aria-hidden="true">&#9635;</span>Practise</button>
+  <button class="tab" data-screen="deck" type="button"><span class="ico" aria-hidden="true">&#9733;</span>Deck</button>
+  <button class="tab" data-screen="more" type="button"><span class="ico" aria-hidden="true">&#9881;</span>Settings</button>
+</nav>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="./app.js"></script>
+</body>
+</html>
