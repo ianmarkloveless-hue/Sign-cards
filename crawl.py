@@ -48,15 +48,24 @@ NOISE = ("Link to video", "Embed this video", "More details", "Link to this vide
 
 lock = threading.Lock()
 session = requests.Session()
-session.headers.update({"User-Agent": UA, "Accept-Language": "en-GB,en"})
+session.headers.update({
+    "User-Agent": UA,
+    "Accept-Language": "en-GB,en",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+})
+
+_diag_count = 0
 
 
 # ----------------------------------------------------------------- fetching
 
 def get(url, tries=3):
+    global _diag_count
+    last = None
     for attempt in range(tries):
         try:
             r = session.get(url, timeout=25)
+            last = str(r.status_code)
             if r.status_code == 200:
                 return r.text
             if r.status_code in (404, 410):
@@ -64,9 +73,13 @@ def get(url, tries=3):
             if r.status_code in (429, 503):
                 time.sleep(8 * (attempt + 1))
                 continue
-            return None
-        except requests.RequestException:
+            break  # some other status (e.g. 403) -- no point retrying
+        except requests.RequestException as exc:
+            last = "connection error: %s" % exc
             time.sleep(3 * (attempt + 1))
+    if _diag_count < 8:
+        _diag_count += 1
+        print("  could not fetch %s (%s)" % (url, last), flush=True)
     return None
 
 
@@ -333,6 +346,16 @@ def main():
         print("If the text above does not actually list /sign/ under a matching "
               "Disallow rule, this is a parser mismatch worth checking by hand.")
         return 1
+
+    print("\nTrying a real word page directly...")
+    probe = get(SITE + "/sign/house")
+    if probe:
+        print("  fetched /sign/house fine (%d bytes). Good sign." % len(probe))
+    else:
+        print("  could not fetch /sign/house at all -- see the failure line above this.")
+        print("  If it says 403 or 'Forbidden', the site's firewall is blocking requests")
+        print("  from GitHub's servers specifically (this is common and not a bug in the")
+        print("  crawler). If so, this needs to run from an ordinary computer instead.")
 
     shards = {} if args.fresh else load_shards()
     state = {} if args.fresh else read_json(STATE_FILE, {})
