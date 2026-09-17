@@ -83,7 +83,16 @@
   $('#q').addEventListener('input', function () {
     clearTimeout(searchTimer);
     var q = this.value;
+    $('#q-clear').hidden = !q;
     searchTimer = setTimeout(function () { runSearch(q); }, 140);
+  });
+
+  $('#q-clear').addEventListener('click', function () {
+    var q = $('#q');
+    q.value = '';
+    this.hidden = true;
+    q.focus();
+    runSearch('');
   });
 
   function runSearch(raw) {
@@ -179,6 +188,16 @@
         });
         v.appendChild(sec);
       });
+
+      /* Scroll far enough that the first clip is on screen. Repeated once the
+         video reports its size, because until then it has no real height. */
+      var firstClip = v.querySelector('.clip');
+      if (firstClip) {
+        var reveal = function () { firstClip.scrollIntoView({ block: 'nearest' }); };
+        reveal();
+        var fv = firstClip.querySelector('video');
+        if (fv && !fv.videoHeight) fv.addEventListener('loadedmetadata', reveal, { once: true });
+      }
     }).catch(function () {
       $('#search-results').innerHTML = noIndexMessage();
     });
