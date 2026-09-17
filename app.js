@@ -184,19 +184,49 @@
     });
   }
 
+  /* A clip with its own tap-to-play overlay instead of the native controls,
+     which on iOS sit on top of the sign and fade out too slowly to read it. */
+  function makeVideo(u, autoplay) {
+    var wrap = document.createElement('div');
+    wrap.className = 'vid';
+
+    var v = document.createElement('video');
+    v.src = videoUrl(u);
+    v.loop = true;
+    v.muted = true;
+    v.playsInline = true;
+    v.setAttribute('playsinline', '');
+    v.setAttribute('webkit-playsinline', '');
+    v.setAttribute('muted', '');
+    v.preload = autoplay ? 'auto' : 'metadata';
+    wrap.appendChild(v);
+
+    var tap = document.createElement('button');
+    tap.className = 'playpause';
+    tap.type = 'button';
+    tap.setAttribute('aria-label', 'Play or pause');
+    wrap.appendChild(tap);
+
+    function sync() { wrap.classList.toggle('is-playing', !v.paused); }
+    v.addEventListener('play', sync);
+    v.addEventListener('pause', sync);
+    tap.addEventListener('click', function () {
+      if (v.paused) v.play().catch(function () {});
+      else v.pause();
+    });
+
+    if (autoplay) v.play().catch(function () {});
+    return { wrap: wrap, video: v };
+  }
+
   function clipEl(vid, slug, word, def) {
     var id = slug + '#' + (vid.id || vid.u);
     var wrap = document.createElement('div');
     wrap.className = 'clip';
 
-    var video = document.createElement('video');
-    video.src = videoUrl(vid.u);
-    video.controls = true;
-    video.playsInline = true;
-    video.setAttribute('playsinline', '');
-    video.preload = 'metadata';
-    video.loop = true;
-    wrap.appendChild(video);
+    var made = makeVideo(vid.u, false);
+    var video = made.video;
+    wrap.appendChild(made.wrap);
 
     var bar = document.createElement('div');
     bar.className = 'clipbar';
@@ -340,18 +370,8 @@
       var clip = document.createElement('div');
       clip.className = 'clip';
       clip.style.width = '100%';
-      var v = document.createElement('video');
-      v.src = videoUrl(card.u);
-      v.controls = true;
-      v.loop = true;
-      v.muted = true;
-      v.playsInline = true;
-      v.setAttribute('playsinline', '');
-      v.setAttribute('muted', '');
-      v.preload = 'auto';
-      clip.appendChild(v);
+      clip.appendChild(makeVideo(card.u, autoplay).wrap);
       prompt.appendChild(clip);
-      if (autoplay) v.play().catch(function () {});
     };
 
     if (settings.mode === 'productive') {
@@ -553,6 +573,24 @@
       });
   }
 
+  /* Ask the browser to keep this app's storage out of any automatic clear-out.
+     Granted for installed home-screen apps; the deck lives in localStorage either way. */
+  function claimStorage() {
+    var el = $('#store-status');
+    if (!navigator.storage || !navigator.storage.persist) {
+      el.textContent = 'Your deck is saved on this device.';
+      return;
+    }
+    navigator.storage.persisted()
+      .then(function (already) { return already || navigator.storage.persist(); })
+      .then(function (ok) {
+        el.textContent = ok
+          ? 'Saved on this device and marked as permanent — it will not be cleared automatically.'
+          : 'Saved on this device. Add the app to your home screen to make that permanent.';
+      })
+      .catch(function () { el.textContent = 'Your deck is saved on this device.'; });
+  }
+
   /* ---------------- navigation ---------------- */
 
   $$('.tab').forEach(function (tab) {
@@ -571,6 +609,7 @@
   setMode(settings.mode || 'productive');
   $('#search-results').innerHTML = emptySearch();
   reportIndex();
+  claimStorage();
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function () {
