@@ -191,7 +191,9 @@
     wrap.className = 'vid';
 
     var v = document.createElement('video');
-    v.src = videoUrl(u);
+    /* The #t fragment makes the browser paint that frame as a still rather than
+       leaving a black box until the clip is played. */
+    v.src = videoUrl(u) + '#t=0.001';
     v.loop = true;
     v.muted = true;
     v.playsInline = true;
