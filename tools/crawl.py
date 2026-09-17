@@ -313,15 +313,26 @@ def main():
 
     deadline = time.time() + args.minutes * 60
 
+    robots_text = get(SITE + "/robots.txt", tries=1) or ""
+    print("--- robots.txt ---")
+    print(robots_text.strip() or "(empty or unreadable)")
+    print("--- end robots.txt ---")
+
     robots = RobotFileParser()
-    robots.set_url(SITE + "/robots.txt")
+    robots.parse(robots_text.splitlines())
     try:
-        robots.read()
-        if not robots.can_fetch(UA, SITE + "/sign/house"):
-            print("robots.txt asks crawlers to stay out of /sign/. Stopping.")
-            return 1
+        blocked_star = not robots.can_fetch("*", SITE + "/sign/house")
+        blocked_us = not robots.can_fetch(UA, SITE + "/sign/house")
     except Exception:
-        print("Could not read robots.txt; carrying on gently.")
+        blocked_star = blocked_us = False
+
+    if blocked_star or blocked_us:
+        print("\nrobots.txt appears to disallow /sign/ for %s crawlers."
+              % ("all" if blocked_star else "this"))
+        print("Respecting that and stopping rather than crawling anyway.")
+        print("If the text above does not actually list /sign/ under a matching "
+              "Disallow rule, this is a parser mismatch worth checking by hand.")
+        return 1
 
     shards = {} if args.fresh else load_shards()
     state = {} if args.fresh else read_json(STATE_FILE, {})
