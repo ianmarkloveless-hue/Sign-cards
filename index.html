@@ -29,6 +29,23 @@
     <div id="word-view" class="word-view" hidden></div>
   </section>
 
+  <!-- ============ EXPLORE ============ -->
+  <section id="screen-explore" class="screen" hidden>
+    <div class="browsebar">
+      <select id="explore-cat" class="catselect" aria-label="Filter by category"></select>
+      <div class="browse">
+        <button id="explore-prev" class="step" type="button" aria-label="Previous word">&#8249;</button>
+        <div class="orderswitch" role="group" aria-label="Browsing order">
+          <button id="order-az" class="order is-on" type="button">A&ndash;Z</button>
+          <button id="order-random" class="order" type="button">Random</button>
+        </div>
+        <button id="explore-next" class="step" type="button" aria-label="Next word">&#8250;</button>
+      </div>
+      <p id="explore-pos" class="explore-pos"></p>
+    </div>
+    <div id="explore-word" class="word-view"></div>
+  </section>
+
   <!-- ============ PRACTISE ============ -->
   <section id="screen-practise" class="screen" hidden>
     <div class="modeswitch" role="group" aria-label="Practice mode">
@@ -89,6 +106,7 @@
 
 <nav id="tabs" class="tabs" aria-label="Sections">
   <button class="tab is-on" data-screen="search" type="button"><span class="ico" aria-hidden="true">&#9906;</span>Search</button>
+  <button class="tab" data-screen="explore" type="button"><span class="ico" aria-hidden="true">&#9673;</span>Explore</button>
   <button class="tab" data-screen="practise" type="button"><span class="ico" aria-hidden="true">&#9635;</span>Practise</button>
   <button class="tab" data-screen="deck" type="button"><span class="ico" aria-hidden="true">&#9733;</span>Deck</button>
   <button class="tab" data-screen="more" type="button"><span class="ico" aria-hidden="true">&#9881;</span>Settings</button>
