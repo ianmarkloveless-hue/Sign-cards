@@ -2,7 +2,7 @@
    playback works without a connection. Videos live on another domain and are
    deliberately left alone. */
 
-var VERSION = 'signcards-v5';
+var VERSION = 'signcards-v6';
 var SHELL = [
   './',
   './index.html',

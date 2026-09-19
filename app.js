@@ -73,7 +73,11 @@
   }
 
   function getEntry(slug) {
-    return loadShard(letterOf(slug)).then(function (s) { return s[slug] || null; });
+    return loadShard(letterOf(slug)).then(function (s) {
+      /* hasOwnProperty, not s[slug]: "constructor" is a real headword and would
+         otherwise match the one inherited from Object.prototype. */
+      return Object.prototype.hasOwnProperty.call(s, slug) ? s[slug] : null;
+    });
   }
 
   /* ---------------- search ---------------- */
@@ -465,8 +469,49 @@
     return Object.keys(favs).map(function (k) { return favs[k]; });
   }
 
-  function pickCard() {
+  var slugCats = null;
+
+  function buildSlugCats() {
+    if (slugCats) return slugCats;
+    if (!cats || !words) return {};   // not loaded yet; don't cache an empty map
+    /* No prototype: the dictionary contains the word "constructor", and on a
+       plain object that key already holds a function. */
+    slugCats = Object.create(null);
+    ((cats && cats.categories) || []).forEach(function (c) {
+      c.idx.forEach(function (i) {
+        var pair = words && words[i];
+        if (!pair) return;
+        (slugCats[pair[1]] || (slugCats[pair[1]] = [])).push(c.id);
+      });
+    });
+    return slugCats;
+  }
+
+  function deckIn(catId) {
     var d = deck();
+    if (!catId || catId === 'all' || !cats) return d;
+    var map = buildSlugCats();
+    return d.filter(function (card) {
+      var list = map[card.slug];
+      return list && list.indexOf(catId) > -1;
+    });
+  }
+
+  /* How many cards sit in each category, so practise and deck can offer only
+     the categories you actually hold cards in. */
+  function deckCatCounts() {
+    var map = buildSlugCats();
+    var counts = Object.create(null);
+    deck().forEach(function (card) {
+      (map[card.slug] || []).forEach(function (id) {
+        counts[id] = (counts[id] || 0) + 1;
+      });
+    });
+    return counts;
+  }
+
+  function pickCard() {
+    var d = deckIn(settings.practiseCat);
     if (!d.length) return null;
     if (d.length === 1) return d[0];
 
@@ -590,11 +635,12 @@
       body.appendChild(answers);
     }
 
-    var d = deck();
+    var d = deckIn(settings.practiseCat);
     var learning = d.filter(function (c) { return (c.box || 1) <= 2; }).length;
     var p = document.createElement('p');
     p.className = 'progress';
-    p.textContent = d.length + ' cards in your deck \u00b7 ' + learning + ' still bedding in';
+    p.textContent = d.length + (settings.practiseCat && settings.practiseCat !== 'all'
+      ? ' cards in this category \u00b7 ' : ' cards in your deck \u00b7 ') + learning + ' still bedding in';
     body.appendChild(p);
   }
 
@@ -602,15 +648,23 @@
 
   function renderDeck() {
     var list = $('#deck-list');
-    var d = deck().sort(function (a, b) { return (a.box - b.box) || a.word.localeCompare(b.word); });
+    var alpha = settings.deckSort === 'alpha';
+    var d = deckIn(settings.deckCat).sort(alpha
+      ? function (a, b) { return a.word.localeCompare(b.word); }
+      : function (a, b) { return (a.box - b.box) || a.word.localeCompare(b.word); });
+    var filtered = settings.deckCat && settings.deckCat !== 'all';
     $('#deck-count').textContent = d.length
-      ? d.length + ' cards \u00b7 sorted with the shakiest first'
+      ? d.length + (filtered ? ' cards here \u00b7 ' : ' cards \u00b7 ') +
+        (alpha ? 'in alphabetical order' : 'shakiest first')
       : '';
     list.innerHTML = '';
 
     if (!d.length) {
-      list.innerHTML = '<p class="hint">Nothing here yet. Search for a word and tap the star under a video, ' +
-        'or add the starter deck from Settings.</p>';
+      list.innerHTML = filtered
+        ? '<p class="hint">No cards in this category yet. Browse it on the Explore tab and tap the star ' +
+          'under any video.</p>'
+        : '<p class="hint">Nothing here yet. Search for a word and tap the star under a video, ' +
+          'or add the starter deck from Settings.</p>';
       return;
     }
 
@@ -643,13 +697,61 @@
       del.addEventListener('click', function () {
         delete favs[c.id];
         saveFavs();
-        renderDeck();
+        /* Rebuild the filter too: removing the last card of a category should
+           take that category out of the list rather than leave it empty. */
+        openDeck();
       });
       row.appendChild(del);
 
       list.appendChild(row);
     });
   }
+
+  function setSortButtons() {
+    $('#sort-shaky').classList.toggle('is-on', settings.deckSort !== 'alpha');
+    $('#sort-alpha').classList.toggle('is-on', settings.deckSort === 'alpha');
+  }
+
+  /* The practise and deck filters list only the categories you hold cards in,
+     so choosing one can never leave the screen empty. */
+  function openPractise() {
+    return Promise.all([loadWords(), loadCats()]).then(function () {
+      settings.practiseCat = fillCategories($('#practise-cat'), settings.practiseCat, deckCatCounts());
+      saveSettings();
+    }).catch(function (e) { console.error('practise filter:', e); }).then(function () { nextCard(); });
+  }
+
+  function openDeck() {
+    return Promise.all([loadWords(), loadCats()]).then(function () {
+      settings.deckCat = fillCategories($('#deck-cat'), settings.deckCat, deckCatCounts());
+      saveSettings();
+    }).catch(function (e) { console.error('deck filter:', e); }).then(function () {
+      setSortButtons();
+      renderDeck();
+    });
+  }
+
+  $('#practise-cat').addEventListener('change', function () {
+    settings.practiseCat = this.value;
+    saveSettings();
+    nextCard();
+  });
+
+  $('#deck-cat').addEventListener('change', function () {
+    settings.deckCat = this.value;
+    saveSettings();
+    renderDeck();
+  });
+
+  [['#sort-shaky', 'shaky'], ['#sort-alpha', 'alpha']].forEach(function (pair) {
+    $(pair[0]).addEventListener('click', function () {
+      if ((settings.deckSort || 'shaky') === pair[1]) return;
+      settings.deckSort = pair[1];
+      saveSettings();
+      setSortButtons();
+      renderDeck();
+    });
+  });
 
   /* ---------------- settings ---------------- */
 
@@ -778,8 +880,8 @@
       $$('.screen').forEach(function (s) { s.hidden = s.id !== 'screen-' + name; });
       window.scrollTo(0, 0);
       if (name === 'explore') openExplore();
-      if (name === 'practise') nextCard();
-      if (name === 'deck') renderDeck();
+      if (name === 'practise') openPractise();
+      if (name === 'deck') openDeck();
     });
   });
 
