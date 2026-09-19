@@ -102,6 +102,17 @@ fully (swipe it away from the app switcher) and open it again; the old version i
 Want different starter words? Edit `data/starter-deck.json` — it's just a list of words in
 quotes, separated by commas. Words not in the dictionary are skipped.
 
+Want to change the categories? They are rebuilt by two scripts, run from the repository
+root on an ordinary computer rather than on GitHub:
+
+```
+python3 tools/topics.py      # reads signbsl's category and syllabus pages
+python3 tools/categorise.py  # sorts every word by type, needs: pip install nltk
+```
+
+The everyday topic lists are `data/topic-lists.json`; the greetings and everyday verbs
+lists are written by hand near the top of `tools/topics.py` and can be edited there.
+
 ---
 
 ## Credit and fair use
@@ -117,3 +128,10 @@ have their own official iOS app worth supporting.
 
 The crawler obeys `robots.txt`, identifies itself, and pauses between requests. Please
 don't speed it up.
+
+Categories come from two places. The everyday topics are signbsl's own category and
+syllabus pages. The "by type" categories are worked out from
+**[WordNet](https://wordnet.princeton.edu/)**, Princeton University's lexical database,
+which is also where signbsl's definitions came from — so each word can be matched back
+to the sense it was defined from and take that sense's classification. WordNet is used
+only to build the list; none of it is copied into the app.

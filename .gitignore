@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+
+# Local editor/launch settings, not part of the app
+.claude/
