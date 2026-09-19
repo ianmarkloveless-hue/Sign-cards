@@ -48,6 +48,7 @@
 
   <!-- ============ PRACTISE ============ -->
   <section id="screen-practise" class="screen" hidden>
+    <select id="practise-cat" class="catselect filterselect" aria-label="Practise only this category"></select>
     <div class="modeswitch" role="group" aria-label="Practice mode">
       <button id="mode-productive" class="mode is-on" type="button">English first</button>
       <button id="mode-receptive" class="mode" type="button">Sign first</button>
@@ -61,6 +62,11 @@
       <h1>Your deck</h1>
       <p id="deck-count" class="muted"></p>
     </header>
+    <select id="deck-cat" class="catselect filterselect" aria-label="Filter your deck by category"></select>
+    <div class="orderswitch deck-sort" role="group" aria-label="Sort order">
+      <button id="sort-shaky" class="order is-on" type="button">Shakiest first</button>
+      <button id="sort-alpha" class="order" type="button">A&ndash;Z</button>
+    </div>
     <div id="deck-list" class="deck"></div>
   </section>
 

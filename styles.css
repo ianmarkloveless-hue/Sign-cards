@@ -135,6 +135,10 @@ button:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(-
 .order.is-on{background:var(--surface-2);color:var(--text)}
 .explore-pos{color:var(--muted);font-size:.78rem;text-align:center;margin:8px 0 0}
 
+/* the same select and segmented control, filtering practise and the deck */
+.filterselect{margin-bottom:12px}
+.deck-sort{margin-bottom:16px}
+
 /* ---------- word view ---------- */
 .word-view{padding-bottom:10px}
 .back{
