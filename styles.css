@@ -101,6 +101,40 @@ button:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(-
 .result span{color:var(--muted);font-size:.78rem;flex:none}
 .hint{color:var(--muted);font-size:.86rem;padding:26px 2px;max-width:34em}
 
+/* ---------- explore ---------- */
+/* The controls stay put while the word scrolls, so stepping through a category
+   never means scrolling back up to reach the arrows. */
+.browsebar{
+  position:sticky;top:env(safe-area-inset-top);z-index:5;
+  background:var(--bg);padding:4px 0 10px;
+}
+.browsebar::before{
+  content:'';position:absolute;left:0;right:0;bottom:100%;
+  height:calc(env(safe-area-inset-top) + 10px);background:var(--bg);
+}
+.catselect{
+  width:100%;appearance:none;-webkit-appearance:none;
+  border:1px solid var(--line);background:var(--surface);color:var(--text);
+  font:inherit;font-size:1.05rem;padding:13px 40px 13px 15px;border-radius:var(--r);
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%2398a1bd' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 15px center;background-size:12px 8px;
+}
+.browse{display:flex;align-items:stretch;gap:10px;margin-top:10px}
+.step{
+  flex:none;width:66px;appearance:none;border:1px solid var(--line);
+  background:var(--surface-2);color:var(--text);font:inherit;font-size:1.5rem;line-height:1;
+  border-radius:var(--r);cursor:pointer;min-height:52px;
+}
+.step:active{background:var(--line)}
+.step:disabled{opacity:.35}
+.orderswitch{flex:1;display:flex;gap:6px;background:var(--surface);border-radius:var(--r);padding:4px}
+.order{
+  flex:1;appearance:none;border:0;background:none;color:var(--muted);font:inherit;
+  font-size:.86rem;font-weight:560;padding:8px 6px;border-radius:10px;cursor:pointer;
+}
+.order.is-on{background:var(--surface-2);color:var(--text)}
+.explore-pos{color:var(--muted);font-size:.78rem;text-align:center;margin:8px 0 0}
+
 /* ---------- word view ---------- */
 .word-view{padding-bottom:10px}
 .back{

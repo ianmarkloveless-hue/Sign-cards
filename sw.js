@@ -2,7 +2,7 @@
    playback works without a connection. Videos live on another domain and are
    deliberately left alone. */
 
-var VERSION = 'signcards-v4';
+var VERSION = 'signcards-v5';
 var SHELL = [
   './',
   './index.html',
@@ -11,7 +11,8 @@ var SHELL = [
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png',
-  './data/starter-deck.json'
+  './data/starter-deck.json',
+  './data/categories.json'
 ];
 
 self.addEventListener('install', function (e) {

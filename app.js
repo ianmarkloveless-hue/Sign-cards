@@ -149,6 +149,42 @@
 
   /* ---------------- word view ---------------- */
 
+  /* Used by both search and explore, so a word looks the same either way. */
+  function renderSenses(container, entry, slug, word) {
+    var h = document.createElement('h1');
+    h.className = 'headword';
+    h.textContent = word;
+    container.appendChild(h);
+
+    if (!entry || !entry.senses || !entry.senses.length) {
+      container.insertAdjacentHTML('beforeend', '<p class="hint">No videos stored for this word.</p>');
+      return;
+    }
+
+    entry.senses.forEach(function (sense) {
+      var sec = document.createElement('div');
+      sec.className = 'sense';
+      if (sense.def) {
+        sec.insertAdjacentHTML('beforeend', '<p class="def">' + esc(sense.def) + '</p>');
+      }
+      (sense.videos || []).forEach(function (vid) {
+        sec.appendChild(clipEl(vid, slug, word, sense.def || ''));
+      });
+      container.appendChild(sec);
+    });
+  }
+
+  /* Scroll far enough that the first clip is on screen. Repeated once the
+     video reports its size, because until then it has no real height. */
+  function revealFirstClip(container) {
+    var firstClip = container.querySelector('.clip');
+    if (!firstClip) return;
+    var reveal = function () { firstClip.scrollIntoView({ block: 'nearest' }); };
+    reveal();
+    var fv = firstClip.querySelector('video');
+    if (fv && !fv.videoHeight) fv.addEventListener('loadedmetadata', reveal, { once: true });
+  }
+
   function openWord(slug, word) {
     getEntry(slug).then(function (entry) {
       var v = $('#word-view');
@@ -167,37 +203,8 @@
       });
       v.appendChild(back);
 
-      var h = document.createElement('h1');
-      h.className = 'headword';
-      h.textContent = word;
-      v.appendChild(h);
-
-      if (!entry || !entry.senses || !entry.senses.length) {
-        v.insertAdjacentHTML('beforeend', '<p class="hint">No videos stored for this word.</p>');
-        return;
-      }
-
-      entry.senses.forEach(function (sense) {
-        var sec = document.createElement('div');
-        sec.className = 'sense';
-        if (sense.def) {
-          sec.insertAdjacentHTML('beforeend', '<p class="def">' + esc(sense.def) + '</p>');
-        }
-        (sense.videos || []).forEach(function (vid) {
-          sec.appendChild(clipEl(vid, slug, word, sense.def || ''));
-        });
-        v.appendChild(sec);
-      });
-
-      /* Scroll far enough that the first clip is on screen. Repeated once the
-         video reports its size, because until then it has no real height. */
-      var firstClip = v.querySelector('.clip');
-      if (firstClip) {
-        var reveal = function () { firstClip.scrollIntoView({ block: 'nearest' }); };
-        reveal();
-        var fv = firstClip.querySelector('video');
-        if (fv && !fv.videoHeight) fv.addEventListener('loadedmetadata', reveal, { once: true });
-      }
+      renderSenses(v, entry, slug, word);
+      revealFirstClip(v);
     }).catch(function () {
       $('#search-results').innerHTML = noIndexMessage();
     });
@@ -301,6 +308,156 @@
       box: 1, last: 0, seen: 0, right: 0, wrong: 0, added: Date.now()
     };
   }
+
+  /* ---------------- explore ---------------- */
+
+  var cats = null;
+  var explore = { cat: 'all', random: false, pos: 0, order: null };
+
+  function loadCats() {
+    if (cats) return Promise.resolve(cats);
+    return fetch('./data/categories.json')
+      .then(function (r) { if (!r.ok) throw new Error('missing'); return r.json(); })
+      .then(function (d) { cats = d; return d; });
+  }
+
+  function catById(id) {
+    var list = (cats && cats.categories) || [];
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].id === id) return list[i];
+    }
+    return null;
+  }
+
+  /* Fills a <select> with "All" plus each group of categories. `only` limits it
+     to a set of ids, which is how practise and deck avoid offering a filter
+     that would leave nothing to show. */
+  function fillCategories(sel, chosen, only) {
+    sel.innerHTML = '';
+    var all = document.createElement('option');
+    all.value = 'all';
+    all.textContent = 'All — show me everything';
+    sel.appendChild(all);
+
+    ((cats && cats.groups) || []).forEach(function (g) {
+      var members = cats.categories.filter(function (c) {
+        return c.group === g.id && (!only || only[c.id]);
+      });
+      if (!members.length) return;
+      var og = document.createElement('optgroup');
+      og.label = g.name;
+      members.forEach(function (c) {
+        var o = document.createElement('option');
+        o.value = c.id;
+        o.textContent = c.name + ' (' + (only ? only[c.id] : c.idx.length).toLocaleString() + ')';
+        og.appendChild(o);
+      });
+      sel.appendChild(og);
+    });
+
+    sel.value = chosen && sel.querySelector('option[value="' + chosen + '"]') ? chosen : 'all';
+    return sel.value;
+  }
+
+  function shuffle(a) {
+    for (var i = a.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var t = a[i]; a[i] = a[j]; a[j] = t;
+    }
+    return a;
+  }
+
+  /* One shuffled copy per category, so Back retraces your steps rather than
+     jumping somewhere new. */
+  function buildOrder() {
+    var list;
+    if (explore.cat === 'all') {
+      list = [];
+      for (var i = 0; i < (words || []).length; i++) list.push(i);
+    } else {
+      var c = catById(explore.cat);
+      list = c ? c.idx.slice() : [];
+    }
+    explore.order = explore.random ? shuffle(list) : list;
+    explore.pos = 0;
+  }
+
+  function renderExplore() {
+    var box = $('#explore-word');
+    var label = $('#explore-pos');
+    var order = explore.order || [];
+
+    if (!order.length) {
+      box.innerHTML = '<p class="hint">No words in this category.</p>';
+      label.textContent = '';
+      $('#explore-prev').disabled = $('#explore-next').disabled = true;
+      return;
+    }
+
+    explore.pos = Math.max(0, Math.min(explore.pos, order.length - 1));
+    $('#explore-prev').disabled = explore.pos === 0;
+    $('#explore-next').disabled = explore.pos === order.length - 1;
+    label.textContent = (explore.pos + 1).toLocaleString() + ' of ' + order.length.toLocaleString();
+
+    var pair = words[order[explore.pos]];
+    getEntry(pair[1]).then(function (entry) {
+      box.innerHTML = '';
+      renderSenses(box, entry, pair[1], pair[0]);
+    }).catch(function () {
+      box.innerHTML = noIndexMessage();
+    });
+  }
+
+  function setOrderButtons() {
+    $('#order-az').classList.toggle('is-on', !explore.random);
+    $('#order-random').classList.toggle('is-on', explore.random);
+  }
+
+  function openExplore() {
+    return Promise.all([loadWords(), loadCats()]).then(function () {
+      if (!$('#explore-cat').options.length) {
+        explore.cat = fillCategories($('#explore-cat'), settings.exploreCat);
+        explore.random = !!settings.exploreRandom;
+        setOrderButtons();
+        buildOrder();
+      }
+      renderExplore();
+    }).catch(function () {
+      $('#explore-word').innerHTML = noIndexMessage();
+      $('#explore-pos').textContent = '';
+    });
+  }
+
+  $('#explore-cat').addEventListener('change', function () {
+    explore.cat = this.value;
+    settings.exploreCat = this.value;
+    saveSettings();
+    buildOrder();
+    renderExplore();
+    window.scrollTo(0, 0);
+  });
+
+  $('#explore-prev').addEventListener('click', function () {
+    explore.pos--;
+    renderExplore();
+  });
+
+  $('#explore-next').addEventListener('click', function () {
+    explore.pos++;
+    renderExplore();
+  });
+
+  [['#order-az', false], ['#order-random', true]].forEach(function (pair) {
+    $(pair[0]).addEventListener('click', function () {
+      if (explore.random === pair[1]) return;
+      explore.random = pair[1];
+      settings.exploreRandom = pair[1];
+      saveSettings();
+      setOrderButtons();
+      buildOrder();
+      renderExplore();
+    });
+  });
 
   /* ---------------- scheduling ---------------- */
 
@@ -620,6 +777,7 @@
       $$('.tab').forEach(function (t) { t.classList.toggle('is-on', t === tab); });
       $$('.screen').forEach(function (s) { s.hidden = s.id !== 'screen-' + name; });
       window.scrollTo(0, 0);
+      if (name === 'explore') openExplore();
       if (name === 'practise') nextCard();
       if (name === 'deck') renderDeck();
     });
