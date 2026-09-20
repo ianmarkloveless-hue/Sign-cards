@@ -444,11 +444,13 @@
   $('#explore-prev').addEventListener('click', function () {
     explore.pos--;
     renderExplore();
+    window.scrollTo(0, 0);
   });
 
   $('#explore-next').addEventListener('click', function () {
     explore.pos++;
     renderExplore();
+    window.scrollTo(0, 0);
   });
 
   [['#order-az', false], ['#order-random', true]].forEach(function (pair) {
