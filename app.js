@@ -36,7 +36,7 @@
     catch (e) { toast('Could not save — phone storage is full.'); }
   }
 
-  var saveFavs = function () { save(FAV_KEY, favs); };
+  var saveFavs = function () { save(FAV_KEY, favs); refreshDeckMarks(); };
   var saveSettings = function () { save(SET_KEY, settings); };
 
   function toast(msg) {
@@ -77,6 +77,42 @@
       /* hasOwnProperty, not s[slug]: "constructor" is a real headword and would
          otherwise match the one inherited from Object.prototype. */
       return Object.prototype.hasOwnProperty.call(s, slug) ? s[slug] : null;
+    });
+  }
+
+  /* ---------------- deck marks ---------------- */
+
+  /* A star beside a word means at least one of its clips is already in the
+     deck, so search and explore show at a glance what has been collected. */
+
+  function deckSlugs() {
+    /* No prototype: "constructor" is a real headword. */
+    var set = Object.create(null);
+    Object.keys(favs).forEach(function (k) {
+      if (favs[k] && favs[k].slug) set[favs[k].slug] = true;
+    });
+    return set;
+  }
+
+  function deckMark() {
+    var s = document.createElement('span');
+    s.className = 'indeck';
+    s.innerHTML = '<span aria-hidden="true">&#9733;</span>' +
+                  '<span class="sr-only"> in your deck</span>';
+    return s;
+  }
+
+  /* Anything carrying data-slug gets its star kept in step with the deck.
+     Called from saveFavs, so every route that changes the deck is covered. */
+  function refreshDeckMarks() {
+    var inDeck = deckSlugs();
+    $$('[data-slug]').forEach(function (el) {
+      var mark = el.querySelector('.indeck');
+      if (inDeck[el.getAttribute('data-slug')]) {
+        if (!mark) el.appendChild(deckMark());
+      } else if (mark) {
+        el.removeChild(mark);
+      }
     });
   }
 
@@ -124,11 +160,14 @@
       }
 
       box.innerHTML = '';
+      var inDeck = deckSlugs();
       hits.forEach(function (h) {
         var b = document.createElement('button');
         b.className = 'result';
         b.type = 'button';
+        b.setAttribute('data-slug', h[1]);
         b.innerHTML = '<b>' + esc(h[0]) + '</b>';
+        if (inDeck[h[1]]) b.appendChild(deckMark());
         b.addEventListener('click', function () { openWord(h[1], h[0]); });
         box.appendChild(b);
       });
@@ -158,6 +197,8 @@
     var h = document.createElement('h1');
     h.className = 'headword';
     h.textContent = word;
+    h.setAttribute('data-slug', slug);
+    if (deckSlugs()[slug]) h.appendChild(deckMark());
     container.appendChild(h);
 
     if (!entry || !entry.senses || !entry.senses.length) {
