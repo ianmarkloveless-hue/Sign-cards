@@ -178,17 +178,6 @@
     });
   }
 
-  /* Scroll far enough that the first clip is on screen. Repeated once the
-     video reports its size, because until then it has no real height. */
-  function revealFirstClip(container) {
-    var firstClip = container.querySelector('.clip');
-    if (!firstClip) return;
-    var reveal = function () { firstClip.scrollIntoView({ block: 'nearest' }); };
-    reveal();
-    var fv = firstClip.querySelector('video');
-    if (fv && !fv.videoHeight) fv.addEventListener('loadedmetadata', reveal, { once: true });
-  }
-
   function openWord(slug, word) {
     getEntry(slug).then(function (entry) {
       var v = $('#word-view');
@@ -208,7 +197,11 @@
       v.appendChild(back);
 
       renderSenses(v, entry, slug, word);
-      revealFirstClip(v);
+      /* Put the word itself at the top. Bringing only the clip into view left
+         the headword and definition stranded part way down the results list,
+         or scrolled nothing at all when the clip already happened to be on
+         screen. The gap for the sticky search bar is set in the stylesheet. */
+      v.scrollIntoView({ block: 'start' });
     }).catch(function () {
       $('#search-results').innerHTML = noIndexMessage();
     });
