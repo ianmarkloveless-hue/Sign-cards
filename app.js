@@ -409,9 +409,38 @@
       renderSenses(box, entry, pair[1], pair[0]);
       /* Once the new word is in the DOM, not before: scrolling while the old
          one is still rendered leaves the position to be undone by the swap. */
-      if (toTop) window.scrollTo(0, 0);
+      if (toTop) settleToTop(box);
     }).catch(function () {
       box.innerHTML = noIndexMessage();
+    });
+  }
+
+  /* Scrolling once is not enough. Clips that are not the 4:3 the layout
+     reserves change height when their metadata lands, and the browser shifts
+     the page to keep what it was showing steady, which carries the headword
+     back off the top. Re-assert the top as each clip reports in, but give way
+     the moment the reader scrolls for themselves. */
+  function settleToTop(container) {
+    window.scrollTo(0, 0);
+
+    var waiting = Array.prototype.slice.call(container.querySelectorAll('video'))
+      .filter(function (v) { return !v.videoHeight; });
+    if (!waiting.length) return;
+
+    var live = true;
+    function release() {
+      live = false;
+      window.removeEventListener('touchstart', release);
+      window.removeEventListener('wheel', release);
+    }
+    window.addEventListener('touchstart', release, { passive: true });
+    window.addEventListener('wheel', release, { passive: true });
+    setTimeout(release, 4000);
+
+    waiting.forEach(function (v) {
+      v.addEventListener('loadedmetadata', function () {
+        if (live && window.scrollY !== 0) window.scrollTo(0, 0);
+      }, { once: true });
     });
   }
 
