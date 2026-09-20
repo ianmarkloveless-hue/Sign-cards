@@ -386,7 +386,7 @@
     explore.pos = 0;
   }
 
-  function renderExplore() {
+  function renderExplore(toTop) {
     var box = $('#explore-word');
     var label = $('#explore-pos');
     var order = explore.order || [];
@@ -407,6 +407,9 @@
     getEntry(pair[1]).then(function (entry) {
       box.innerHTML = '';
       renderSenses(box, entry, pair[1], pair[0]);
+      /* Once the new word is in the DOM, not before: scrolling while the old
+         one is still rendered leaves the position to be undone by the swap. */
+      if (toTop) window.scrollTo(0, 0);
     }).catch(function () {
       box.innerHTML = noIndexMessage();
     });
@@ -437,20 +440,20 @@
     settings.exploreCat = this.value;
     saveSettings();
     buildOrder();
-    renderExplore();
     window.scrollTo(0, 0);
+    renderExplore(true);
   });
 
   $('#explore-prev').addEventListener('click', function () {
     explore.pos--;
-    renderExplore();
     window.scrollTo(0, 0);
+    renderExplore(true);
   });
 
   $('#explore-next').addEventListener('click', function () {
     explore.pos++;
-    renderExplore();
     window.scrollTo(0, 0);
+    renderExplore(true);
   });
 
   [['#order-az', false], ['#order-random', true]].forEach(function (pair) {
