@@ -9,6 +9,10 @@
   var FAV_KEY = 'signcards.favourites.v1';
   var SET_KEY = 'signcards.settings.v1';
   var MAX_BOX = 5;
+  /* How much a card is favoured while it is still new, by the number of times
+     it has been seen. A card keeps its place here until it has actually come
+     up, so one added weeks ago and never drawn is still treated as new. */
+  var SETTLING = [4, 2.5, 1.8, 1.3];
 
   var words = null;          // [[word, slug], ...]
   var shards = {};           // letter -> {slug: entry}
@@ -587,8 +591,12 @@
     var now = Date.now();
     var total = 0;
     var weights = pool.map(function (c) {
-      var days = c.last ? (now - c.last) / 86400000 : 7;
-      var w = Math.pow(2, MAX_BOX - (c.box || 1)) * (1 + Math.min(days, 10) / 5);
+      /* A card never seen counts as fully overdue rather than a week old,
+         so it outranks anything merely neglected instead of sitting below it. */
+      var days = c.last ? (now - c.last) / 86400000 : 10;
+      var w = Math.pow(2, MAX_BOX - (c.box || 1)) *
+              (1 + Math.min(days, 10) / 5) *
+              (SETTLING[c.seen || 0] || 1);
       total += w;
       return w;
     });
