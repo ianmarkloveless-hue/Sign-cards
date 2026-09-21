@@ -9,14 +9,17 @@
   var FAV_KEY = 'signcards.favourites.v1';
   var SET_KEY = 'signcards.settings.v1';
   var MAX_BOX = 5;
-  /* How much a card is favoured while it is still new, by the number of times
-     it has been seen. A card keeps its place here until it has actually come
-     up, so one added weeks ago and never drawn is still treated as new. */
-  var SETTLING = [4, 2.5, 1.8, 1.3];
+  /* A card is still being learnt until it has been answered correctly this
+     many times, and is favoured by BOOST until then. Correct answers rather
+     than sightings, so a word you keep getting wrong stays in the learning
+     phase instead of ageing out of it. */
+  var GRADUATE = 2;
+  var BOOST = 3;
   /* How many never-seen cards a practice session opens with, so a batch added
      after a lesson is gone through while the signs are still fresh. A cap, not
-     a quota: once nothing is unseen, practice carries on as normal. */
-  var INTAKE = 20;
+     a quota: once nothing is unseen, practice carries on as normal. It only
+     matters after a large import, since a session rarely runs this long. */
+  var INTAKE = 50;
 
   var words = null;          // [[word, slug], ...]
   var shards = {};           // letter -> {slug: entry}
@@ -613,7 +616,7 @@
       var days = c.last ? (now - c.last) / 86400000 : 10;
       var w = Math.pow(2, MAX_BOX - (c.box || 1)) *
               (1 + Math.min(days, 10) / 5) *
-              (SETTLING[c.seen || 0] || 1);
+              ((c.right || 0) < GRADUATE ? BOOST : 1);
       total += w;
       return w;
     });
