@@ -6,6 +6,11 @@
   'use strict';
 
   var MEDIA = 'https://media.signbsl.com/videos/bsl/';
+  /* Shown in Settings, so it is possible to tell from the phone which build is
+     running. Bump it when releasing, and tag the commit to match. The cache
+     name in sw.js is a separate thing: that only tells the phone to refetch. */
+  var APP_VERSION = '1.0';
+
   var FAV_KEY = 'signcards.favourites.v1';
   var SET_KEY = 'signcards.settings.v1';
   var MAX_BOX = 5;
@@ -990,6 +995,7 @@
   $('#search-results').innerHTML = emptySearch();
   reportIndex();
   claimStorage();
+  $('#app-version').textContent = 'Sign Cards, version ' + APP_VERSION + '.';
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function () {
