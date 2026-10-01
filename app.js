@@ -9,11 +9,15 @@
   /* Shown in Settings, so it is possible to tell from the phone which build is
      running. Bump it when releasing, and tag the commit to match. The cache
      name in sw.js is a separate thing: that only tells the phone to refetch. */
-  var APP_VERSION = '1.0';
+  var APP_VERSION = '1.1';
 
   var FAV_KEY = 'signcards.favourites.v1';
   var SET_KEY = 'signcards.settings.v1';
-  var MAX_BOX = 5;
+  /* Eight rather than five, so that a word answered correctly many times in a
+     row separates from one that has only just reached the top. Existing cards
+     keep their box number and climb from there: a card that scraped into the
+     old top box has not earned the new one. */
+  var MAX_BOX = 8;
   /* A card is still being learnt until it has been answered correctly this
      many times, and is favoured by BOOST until then. Correct answers rather
      than sightings, so a word you keep getting wrong stays in the learning
