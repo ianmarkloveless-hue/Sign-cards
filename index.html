@@ -58,14 +58,16 @@
 
   <!-- ============ DECK ============ -->
   <section id="screen-deck" class="screen" hidden>
-    <header class="head">
-      <h1>Your deck</h1>
-      <p id="deck-count" class="muted"></p>
-    </header>
-    <select id="deck-cat" class="catselect filterselect" aria-label="Filter your deck by category"></select>
-    <div class="orderswitch deck-sort" role="group" aria-label="Sort order">
-      <button id="sort-shaky" class="order is-on" type="button">Shakiest first</button>
-      <button id="sort-alpha" class="order" type="button">A&ndash;Z</button>
+    <div class="deckhead">
+      <header class="head">
+        <h1>Your deck</h1>
+        <p id="deck-count" class="muted"></p>
+      </header>
+      <select id="deck-cat" class="catselect filterselect" aria-label="Filter your deck by category"></select>
+      <div class="orderswitch deck-sort" role="group" aria-label="Sort order">
+        <button id="sort-shaky" class="order is-on" type="button">Shakiest first</button>
+        <button id="sort-alpha" class="order" type="button">A&ndash;Z</button>
+      </div>
     </div>
     <nav id="deck-index" class="azstrip" aria-label="Jump to a letter" hidden></nav>
     <div id="deck-list" class="deck"></div>

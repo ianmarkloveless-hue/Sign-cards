@@ -857,7 +857,26 @@
     });
     strip.hidden = false;
     $('#screen-deck').classList.add('has-index');
+    sizeIndex();
   }
+
+  /* The strip runs from the bottom of the fixed block down to the tab bar, so
+     it sits alongside the cards and nothing else. */
+  /* Where the block ends on screen. It is stuck at the position it already
+     occupied, so this holds whether the page is scrolled or not. */
+  function headBottom() {
+    var head = document.querySelector('#screen-deck .deckhead');
+    return head ? head.getBoundingClientRect().bottom : 0;
+  }
+
+  function sizeIndex() {
+    var b = headBottom();
+    if (b) $('#screen-deck').style.setProperty('--headbottom', b + 'px');
+  }
+
+  window.addEventListener('resize', function () {
+    if (!$('#deck-index').hidden) sizeIndex();
+  });
 
   /* A letter you hold no cards for takes you to the nearest one you do, so no
      tap is ever a dead end. */
@@ -873,7 +892,9 @@
     if (!indexRows) return;
     var row = rowFor(letter);
     if (!row) return;
-    window.scrollTo(0, Math.max(0, row.getBoundingClientRect().top + window.scrollY - 8));
+    /* Clear the fixed block, or the row would land behind it. */
+    window.scrollTo(0, Math.max(0, row.getBoundingClientRect().top + window.scrollY
+                                   - headBottom() - 8));
   }
 
   (function () {

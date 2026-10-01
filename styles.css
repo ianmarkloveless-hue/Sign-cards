@@ -232,6 +232,22 @@ button:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(-
   padding:4px 6px;cursor:pointer;flex:none;
 }
 
+/* The title, count, topic filter and sort switch hold their place while the
+   cards scroll underneath. top: matches where the block already sits, so it
+   never shifts as it becomes stuck. */
+.deckhead{
+  position:sticky;top:calc(env(safe-area-inset-top) + 10px);z-index:6;
+  background:var(--bg);padding:6px 0 14px;
+}
+/* Covers the safe area and the page's own top padding, so rows cannot show
+   through above the block once it is stuck. */
+.deckhead::before{
+  content:'';position:absolute;left:0;right:0;bottom:100%;
+  height:calc(env(safe-area-inset-top) + 10px);background:var(--bg);
+}
+.deckhead .head{margin-top:0}
+.deckhead .deck-sort{margin-bottom:0}
+
 /* ---------- A-Z index ---------- */
 /* Only on the deck, only in alphabetical order. It sits on the left edge of
    the content column, as far as it can get from the delete button on the
@@ -240,7 +256,7 @@ button:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(-
 .azstrip{
   position:fixed;z-index:5;
   left:max(env(safe-area-inset-left),calc(50% - 310px));
-  top:calc(env(safe-area-inset-top) + 12px);
+  top:calc(var(--headbottom,215px) + 8px);   /* set from the measured block */
   bottom:calc(var(--tabh) + var(--safe-b) + 12px);
   width:28px;display:flex;flex-direction:column;
   touch-action:none;                    /* a drag down the strip scrubs, never scrolls */
@@ -256,7 +272,9 @@ button:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(-
 }
 .azstrip button.empty{color:var(--line)}   /* no cards under this letter yet */
 .azstrip button.hit{color:var(--accent)}
-#screen-deck.has-index{padding-left:24px}
+/* Only the card list moves across. The block above spans the full width,
+   because the strip does not reach up alongside it. */
+#screen-deck.has-index #deck-list{padding-left:24px}
 
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px}
 .credit{color:var(--muted);font-size:.78rem;line-height:1.6;padding:6px 2px 0;max-width:38em}
