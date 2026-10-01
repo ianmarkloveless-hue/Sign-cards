@@ -9,7 +9,7 @@
   /* Shown in Settings, so it is possible to tell from the phone which build is
      running. Bump it when releasing, and tag the commit to match. The cache
      name in sw.js is a separate thing: that only tells the phone to refetch. */
-  var APP_VERSION = '1.1';
+  var APP_VERSION = '1.2';
 
   var FAV_KEY = 'signcards.favourites.v1';
   var SET_KEY = 'signcards.settings.v1';
@@ -770,8 +770,12 @@
           'under any video.</p>'
         : '<p class="hint">Nothing here yet. Search for a word and tap the star under a video, ' +
           'or add the starter deck from Settings.</p>';
+      $('#screen-deck').classList.remove('has-index');
+      showIndex(null);
       return;
     }
+
+    var firstRow = Object.create(null);
 
     d.forEach(function (c) {
       var row = document.createElement('div');
@@ -808,9 +812,113 @@
       });
       row.appendChild(del);
 
+      var L = letterOf(c.word);
+      if (!(L in firstRow)) firstRow[L] = row;
+
       list.appendChild(row);
     });
+
+    /* Measured with the strip's padding off, so the answer does not depend on
+       whether the strip happened to be showing a moment ago. */
+    $('#screen-deck').classList.remove('has-index');
+    showIndex(alpha && document.documentElement.scrollHeight > window.innerHeight
+      ? firstRow : null);
   }
+
+  /* ---------------- A-Z index strip ---------------- */
+
+  var LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+  var indexRows = null;      // letter -> the first deck row starting with it
+  var indexKeys = null;      // the letters actually on the strip, in order
+  var scrubbing = null;
+
+  function letterOf(word) {
+    var ch = (word || '').charAt(0).toUpperCase();
+    return ch >= 'A' && ch <= 'Z' ? ch : '#';
+  }
+
+  function showIndex(firstRow) {
+    var strip = $('#deck-index');
+    if (!firstRow) {
+      strip.hidden = true;
+      indexRows = indexKeys = null;
+      return;
+    }
+    indexRows = firstRow;
+    indexKeys = ('#' in firstRow ? ['#'] : []).concat(LETTERS);
+    strip.innerHTML = '';
+    indexKeys.forEach(function (L) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = L;
+      b.dataset.letter = L;
+      if (!(L in firstRow)) b.className = 'empty';
+      strip.appendChild(b);
+    });
+    strip.hidden = false;
+    $('#screen-deck').classList.add('has-index');
+  }
+
+  /* A letter you hold no cards for takes you to the nearest one you do, so no
+     tap is ever a dead end. */
+  function rowFor(letter) {
+    var i = indexKeys.indexOf(letter);
+    if (i < 0) return null;
+    for (var j = i; j < indexKeys.length; j++) if (indexRows[indexKeys[j]]) return indexRows[indexKeys[j]];
+    for (j = i; j >= 0; j--) if (indexRows[indexKeys[j]]) return indexRows[indexKeys[j]];
+    return null;
+  }
+
+  function jumpTo(letter) {
+    if (!indexRows) return;
+    var row = rowFor(letter);
+    if (!row) return;
+    window.scrollTo(0, Math.max(0, row.getBoundingClientRect().top + window.scrollY - 8));
+  }
+
+  (function () {
+    var strip = $('#deck-index');
+
+    function mark(letter) {
+      var all = strip.children;
+      for (var i = 0; i < all.length; i++) all[i].classList.toggle('hit', all[i].dataset.letter === letter);
+    }
+
+    /* Keyboard and mouse both arrive here. */
+    strip.addEventListener('click', function (e) {
+      var b = e.target.closest('button');
+      if (b) { mark(b.dataset.letter); jumpTo(b.dataset.letter); }
+    });
+
+    if (!window.PointerEvent) return;
+
+    /* Sliding a finger down the strip runs through the list, the way the same
+       control behaves elsewhere on the phone. The letter under the finger is
+       found by hit testing the strip's own centre line, so straying sideways
+       mid-drag does not break the gesture. */
+    function scrub(clientY) {
+      var box = strip.getBoundingClientRect();
+      var y = Math.min(Math.max(clientY, box.top + 1), box.bottom - 1);
+      var el = document.elementFromPoint(box.left + box.width / 2, y);
+      var L = el && el.dataset ? el.dataset.letter : null;
+      if (!L || L === scrubbing) return;
+      scrubbing = L;
+      mark(L);
+      jumpTo(L);
+    }
+
+    strip.addEventListener('pointerdown', function (e) {
+      scrubbing = null;
+      strip.setPointerCapture(e.pointerId);
+      scrub(e.clientY);
+    });
+    strip.addEventListener('pointermove', function (e) {
+      if (strip.hasPointerCapture(e.pointerId)) scrub(e.clientY);
+    });
+    ['pointerup', 'pointercancel'].forEach(function (ev) {
+      strip.addEventListener(ev, function () { scrubbing = null; mark(null); });
+    });
+  }());
 
   function setSortButtons() {
     $('#sort-shaky').classList.toggle('is-on', settings.deckSort !== 'alpha');
