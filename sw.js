@@ -2,7 +2,7 @@
    playback works without a connection. Videos live on another domain and are
    deliberately left alone. */
 
-var VERSION = 'signcards-v20';
+var VERSION = 'signcards-v21';
 var SHELL = [
   './',
   './index.html',
@@ -19,7 +19,12 @@ self.addEventListener('install', function (e) {
   e.waitUntil(
     caches.open(VERSION).then(function (c) {
       return Promise.all(SHELL.map(function (u) {
-        return c.add(u).catch(function () {});
+        /* cache: 'reload' matters. A plain add() reads through the browser's
+           own HTTP cache, and Pages serves these with max-age=600, so a new
+           worker could copy the previous release into its new cache: the cache
+           name changed, the files did not, and the app kept reporting the old
+           version. Fetch them from the network instead. */
+        return c.add(new Request(u, { cache: 'reload' })).catch(function () {});
       }));
     }).then(function () { return self.skipWaiting(); })
   );
