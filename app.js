@@ -9,7 +9,7 @@
   /* Shown in Settings, so it is possible to tell from the phone which build is
      running. Bump it when releasing, and tag the commit to match. The cache
      name in sw.js is a separate thing: that only tells the phone to refetch. */
-  var APP_VERSION = '1.3';
+  var APP_VERSION = '1.3.1';
 
   var FAV_KEY = 'signcards.favourites.v1';
   var SET_KEY = 'signcards.settings.v1';
@@ -1159,6 +1159,19 @@
   $('#app-version').textContent = 'Sign Cards, version ' + APP_VERSION + '.';
 
   if ('serviceWorker' in navigator) {
+    /* An update used to need two launches: the worker serves what it has and
+       fetches the new release behind it, so the first launch still showed the
+       old one. If a worker was already in charge when this page loaded, then
+       it handing over means a new release has just taken effect - reload once
+       and the version you are looking at is the version you have. */
+    if (navigator.serviceWorker.controller) {
+      var reloading = false;
+      navigator.serviceWorker.addEventListener('controllerchange', function () {
+        if (reloading) return;
+        reloading = true;
+        window.location.reload();
+      });
+    }
     window.addEventListener('load', function () {
       navigator.serviceWorker.register('./sw.js').catch(function () {});
     });
