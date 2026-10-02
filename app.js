@@ -9,7 +9,7 @@
   /* Shown in Settings, so it is possible to tell from the phone which build is
      running. Bump it when releasing, and tag the commit to match. The cache
      name in sw.js is a separate thing: that only tells the phone to refetch. */
-  var APP_VERSION = '1.2';
+  var APP_VERSION = '1.2.1';
 
   var FAV_KEY = 'signcards.favourites.v1';
   var SET_KEY = 'signcards.settings.v1';
@@ -812,7 +812,7 @@
       });
       row.appendChild(del);
 
-      var L = letterOf(c.word);
+      var L = initialOf(c.word);
       if (!(L in firstRow)) firstRow[L] = row;
 
       list.appendChild(row);
@@ -832,7 +832,10 @@
   var indexKeys = null;      // the letters actually on the strip, in order
   var scrubbing = null;
 
-  function letterOf(word) {
+  /* Not letterOf: that one is the dictionary's, lower case, and naming this
+     the same silently replaced it - every shard fetch asked for A.json
+     instead of a.json and the dictionary looked unbuilt. */
+  function initialOf(word) {
     var ch = (word || '').charAt(0).toUpperCase();
     return ch >= 'A' && ch <= 'Z' ? ch : '#';
   }
