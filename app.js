@@ -9,7 +9,7 @@
   /* Shown in Settings, so it is possible to tell from the phone which build is
      running. Bump it when releasing, and tag the commit to match. The cache
      name in sw.js is a separate thing: that only tells the phone to refetch. */
-  var APP_VERSION = '1.2.1';
+  var APP_VERSION = '1.3';
 
   var FAV_KEY = 'signcards.favourites.v1';
   var SET_KEY = 'signcards.settings.v1';
@@ -29,6 +29,12 @@
      a quota: once nothing is unseen, practice carries on as normal. It only
      matters after a large import, since a session rarely runs this long. */
   var INTAKE = 50;
+  /* The top box rests before it is due again. Everywhere below it, how overdue
+     a card is runs out over ten days; the top box comes round in months, so on
+     that scale the term was flat and a card last seen in the spring counted no
+     more than one seen last week. These put it on its own clock. */
+  var REST = 60;             // days a top-box card rests
+  var DAMP = 30;             // how far its weight is cut while resting
 
   var words = null;          // [[word, slug], ...]
   var shards = {};           // letter -> {slug: entry}
@@ -599,6 +605,23 @@
     return counts;
   }
 
+  /* How overdue a card is, as a multiplier on its weight.
+
+     Below the top box this is the ten-day ramp it has always been: 1 the
+     moment the card is seen, 3 once it is ten days old.
+
+     The top box is on its own clock. Those cards come round in months, so the
+     ten-day ramp sat at its maximum for nearly all of that and could not tell
+     a card rested two months from one rested two years - both weighed the
+     same, and the draw picked between them blind. A top-box card now rests for
+     REST days, then climbs over the following REST, so when learnt words do
+     come back it is the ones longest unseen that return first. */
+  function overdue(box, days) {
+    if (box < MAX_BOX) return 1 + Math.min(days, 10) / 5;
+    if (days < REST) return 1 / DAMP;
+    return 1 + Math.min(days - REST, REST) / (REST / 2);
+  }
+
   function pickCard() {
     var d = deckIn(settings.practiseCat);
     if (!d.length) return null;
@@ -620,11 +643,13 @@
     var now = Date.now();
     var total = 0;
     var weights = pool.map(function (c) {
-      /* A card never seen counts as fully overdue rather than a week old,
-         so it outranks anything merely neglected instead of sitting below it. */
-      var days = c.last ? (now - c.last) / 86400000 : 10;
+      /* A card never seen counts as fully overdue rather than a week old, so
+         it outranks anything merely neglected instead of sitting below it.
+         Far past both ramps, not 10: at 10 a never-seen top-box card out of a
+         restored backup would read as resting and be held back. */
+      var days = c.last ? (now - c.last) / 86400000 : 1e4;
       var w = Math.pow(2, MAX_BOX - (c.box || 1)) *
-              (1 + Math.min(days, 10) / 5) *
+              overdue(c.box || 1, days) *
               ((c.right || 0) < GRADUATE ? BOOST : 1);
       total += w;
       return w;
