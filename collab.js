@@ -490,10 +490,28 @@ function review(blob, word) {
      thing asked to go. This is the component every other clip already uses. */
   const mk = window.SignCards && window.SignCards.makeVideo;
   let v = null;
+  let auto = 'trying';
   if (mk) {
     const made = mk(rec.url, true);     // autoplay: muted and looping, so it moves at once
     rec.pb.appendChild(made.wrap);
     v = made.video;
+
+    /* A dictionary clip paints its first frame through the #t fragment on the
+       URL. A blob cannot carry one - iOS rejects the whole source - so nothing
+       is painted until something decodes a frame. If autoplay is refused, and
+       Low Power Mode refuses it even for muted video, the result is a blank
+       box with no error and readyState 4: exactly what was reported. Nudging
+       currentTime forces a frame to be drawn whether it plays or not. */
+    v.addEventListener('loadeddata', function () {
+      if (v.paused) { try { v.currentTime = 0.05; } catch (e) { /* ignore */ } }
+    });
+
+    /* makeVideo swallows the outcome of play(). Ask again and keep the answer,
+       so a blank picture can be told apart from a refused one. */
+    v.play().then(
+      function () { auto = 'playing'; facts(); },
+      function (err) { auto = 'autoplay refused (' + (err && err.name) + ')'; facts(); }
+    );
   } else {
     v = document.createElement('video');
     v.src = rec.url + '#t=0.001';
@@ -504,14 +522,16 @@ function review(blob, word) {
   }
 
   rec.title.textContent = 'How does that look?';
-  rec.hint.textContent = 'It plays on a loop. If the sign is clear and all of it is in frame, keep it.';
+  rec.hint.textContent = 'It should play on a loop — tap the picture if it does not. '
+    + 'If the sign is clear and all of it is in frame, keep it.';
 
   function facts() {
     const dur = isFinite(v.duration) ? v.duration.toFixed(1) + 's' : SECS + 's';
     rec.facts.innerHTML = '<b>' + Math.round(blob.size / 1024) + ' KB</b> · '
       + v.videoWidth + '×' + v.videoHeight + ' · ' + dur
       + ' · ' + (blob.type || 'unknown type')
-      + ' · ready ' + v.readyState + (v.error ? ' · error ' + v.error.code : '');
+      + ' · ready ' + v.readyState + (v.error ? ' · error ' + v.error.code : '')
+      + ' · ' + (v.paused ? 'paused' : 'playing') + ' · ' + auto;
     rec.facts.hidden = false;
     if (v.error) {
       rec.hint.textContent = 'The clip recorded (' + Math.round(blob.size / 1024)
@@ -564,5 +584,7 @@ function addTryButton() {
   b.addEventListener('click', function () { openRecorder(''); });
   el.in.insertBefore(b, el.signout);
 }
+
+
 
 
