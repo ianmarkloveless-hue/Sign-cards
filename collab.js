@@ -282,7 +282,7 @@ function build() {
       '<div class="rec-stage">' +
         '<video id="rw-pv" playsinline webkit-playsinline muted hidden></video>' +
         '<canvas id="rw-cv" hidden></canvas>' +
-        '<video id="rw-pb" playsinline webkit-playsinline controls hidden></video>' +
+        '<div id="rw-pb" hidden></div>' +
         '<div class="rec-over" id="rw-over" hidden></div>' +
         '<div class="rec-dot" id="rw-dot" hidden><i></i>recording</div>' +
       '</div>' +
@@ -333,7 +333,7 @@ function closeRecorder() {
   if (rec.url) { URL.revokeObjectURL(rec.url); rec.url = null; }
   rec.blob = null;
   rec.pb.hidden = true;
-  rec.pb.removeAttribute('src');
+  rec.pb.innerHTML = '';          // stops the clip and releases the element
   rec.facts.hidden = true;
   rec.wrap.hidden = true;
   document.body.style.overflow = '';
@@ -353,9 +353,11 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function intro(word) {
   rec.title.textContent = word ? 'Record “' + word + '”' : 'Record a clip';
-  rec.hint.textContent = 'Prop the phone sideways, so the frame is the same shape as the '
-    + 'dictionary’s clips. You get a 3, 2, 1 countdown and then ' + SECS + ' seconds.';
+  rec.hint.textContent = 'Hold the phone however suits you — the clip comes out the same '
+    + 'shape as the dictionary’s either way. You get a 3, 2, 1 countdown and then '
+    + SECS + ' seconds.';
   rec.pb.hidden = true;
+  rec.pb.innerHTML = '';          // drop the previous take rather than hide it
   rec.facts.hidden = true;
   buttons([
     ['Start the countdown', 'go', function () { run(word); }],
@@ -409,13 +411,12 @@ async function run(word) {
 
   await wait(300);                       // let a few frames land before capturing
 
-  if (window.innerHeight > window.innerWidth) {
-    rec.over.className = 'rec-over say';
-    rec.over.textContent = 'Turn the phone sideways — portrait will be cropped';
-    rec.over.hidden = false;
-    await wait(2000);
-  }
-
+  /* No orientation prompt. iOS hands over camera frames in the sensor's
+     orientation, which is landscape however the phone is held - round 2 of the
+     camera test reported 640x480 either way - and the canvas fixes the output
+     shape in any case. The earlier advice to turn the phone sideways was wrong.
+     Round 1 came out portrait only because it recorded the stream directly,
+     which applies the device rotation; drawing into a fixed canvas does not. */
   rec.over.className = 'rec-over';
   rec.over.hidden = false;
   for (let n = 3; n >= 1; n--) { rec.over.textContent = String(n); await wait(700); }
@@ -459,23 +460,49 @@ async function run(word) {
 
 function review(blob, word) {
   rec.blob = blob;
-  if (rec.url) URL.revokeObjectURL(rec.url);
+  rec.pb.innerHTML = '';                            // let go of the old take first
+  if (rec.url) URL.revokeObjectURL(rec.url);        // then release what it pointed at
   rec.url = URL.createObjectURL(blob);
 
   rec.cv.hidden = true;
   rec.pb.hidden = false;
-  rec.pb.src = rec.url;
+
+  /* The app's own player, not a bare <video>. A plain element showed a black
+     box with Apple's controls over it - no painted first frame, unmuted so iOS
+     would not play it inline, and the native controls that were the first
+     thing asked to go. This is the component every other clip already uses. */
+  const mk = window.SignCards && window.SignCards.makeVideo;
+  let v = null;
+  if (mk) {
+    const made = mk(rec.url, true);     // autoplay: muted and looping, so it moves at once
+    rec.pb.appendChild(made.wrap);
+    v = made.video;
+  } else {
+    v = document.createElement('video');
+    v.src = rec.url + '#t=0.001';
+    v.loop = true; v.muted = true; v.playsInline = true; v.controls = true;
+    v.setAttribute('playsinline', ''); v.setAttribute('webkit-playsinline', '');
+    v.style.width = '100%';
+    rec.pb.appendChild(v);
+  }
 
   rec.title.textContent = 'How does that look?';
-  rec.hint.textContent = 'Play it back. If the sign is clear and all of it is in frame, keep it.';
+  rec.hint.textContent = 'It plays on a loop. If the sign is clear and all of it is in frame, keep it.';
 
-  rec.pb.onloadedmetadata = function () {
-    const dur = isFinite(rec.pb.duration) ? rec.pb.duration.toFixed(1) + 's' : SECS + 's';
+  function facts() {
+    const dur = isFinite(v.duration) ? v.duration.toFixed(1) + 's' : SECS + 's';
     rec.facts.innerHTML = '<b>' + Math.round(blob.size / 1024) + ' KB</b> · '
-      + rec.pb.videoWidth + '×' + rec.pb.videoHeight + ' · ' + dur
-      + ' · ' + (blob.type || 'unknown type');
+      + v.videoWidth + '×' + v.videoHeight + ' · ' + dur
+      + ' · ' + (blob.type || 'unknown type')
+      + ' · ready ' + v.readyState + (v.error ? ' · error ' + v.error.code : '');
     rec.facts.hidden = false;
-  };
+  }
+  /* canplay as well as loadedmetadata, so the readiness shown is the state it
+     settled at rather than a snapshot taken half a second too early. */
+  v.addEventListener('loadedmetadata', facts);
+  v.addEventListener('canplay', facts);
+  v.addEventListener('error', facts);
+  if (v.readyState >= 1) facts();
 
   buttons([
     ['Keep it', 'keep', function () {
@@ -515,3 +542,4 @@ function addTryButton() {
   b.addEventListener('click', function () { openRecorder(''); });
   el.in.insertBefore(b, el.signout);
 }
+

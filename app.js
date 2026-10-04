@@ -9,7 +9,7 @@
   /* Shown in Settings, so it is possible to tell from the phone which build is
      running. Bump it when releasing, and tag the commit to match. The cache
      name in sw.js is a separate thing: that only tells the phone to refetch. */
-  var APP_VERSION = '1.5.1';
+  var APP_VERSION = '1.5.2';
 
   var FAV_KEY = 'signcards.favourites.v1';
   var SET_KEY = 'signcards.settings.v1';
@@ -85,7 +85,11 @@
   }
 
   function videoUrl(u) {
-    return u.slice(0, 4) === 'http' ? u : MEDIA + u;
+    /* Already a whole address: signbsl's own absolute ones, and a blob: URL
+       for a clip that has just been recorded and is not anywhere yet. Only a
+       bare path belongs to the media host. */
+    if (u.slice(0, 4) === 'http' || u.slice(0, 5) === 'blob:') return u;
+    return MEDIA + u;
   }
 
   function loadWords() {
@@ -1336,6 +1340,11 @@
      anything they do. It grows only when a step actually needs it to. */
   window.SignCards = {
     version: APP_VERSION,
-    toast: toast
+    toast: toast,
+    /* Lent out so a recorded clip is played back by the same component as
+       every other clip in the app: a painted first frame rather than a black
+       box, muted so iOS will play it inline, and the app's own tap control
+       instead of Apple's, which was the first thing asked to go. */
+    makeVideo: makeVideo
   };
 })();
