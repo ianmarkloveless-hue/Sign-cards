@@ -240,6 +240,9 @@ function styleOnce() {
     '.rec-wrap{position:fixed;inset:0;z-index:60;background:var(--bg);overflow-y:auto;',
     '  padding:calc(env(safe-area-inset-top) + 16px) 18px calc(env(safe-area-inset-bottom) + 24px)}',
     '.rec-wrap[hidden]{display:none}',
+    // display:flex below beats [hidden]'s display:none, so these need saying
+    // out loud or the countdown number and the banner can never be taken away.
+    '.rec-over[hidden],.rec-dot[hidden]{display:none}',
     '.rec-inner{max-width:620px;margin:0 auto}',
     '.rec-wrap h2{font-size:1.25rem;font-weight:650;letter-spacing:-.02em;margin:0 0 4px}',
     '.rec-wrap p{margin:0 0 14px}',
@@ -250,12 +253,15 @@ function styleOnce() {
     '  background:rgba(0,0,0,.3);color:#fff;font-size:4.5rem;font-weight:700;',
     '  text-shadow:0 2px 24px rgba(0,0,0,.8)}',
     '.rec-over.say{font-size:1.05rem;font-weight:600;text-align:center;padding:0 28px;line-height:1.45}',
-    '.rec-dot{position:absolute;top:10px;left:10px;display:flex;align-items:center;gap:7px;',
-    '  background:rgba(0,0,0,.55);padding:5px 11px;border-radius:999px;font-size:.8rem;',
-    '  font-weight:600;color:#fff}',
-    '.rec-dot i{width:9px;height:9px;border-radius:50%;background:var(--no);',
+    '.rec-dot{position:absolute;top:0;left:0;right:0;display:flex;align-items:center;',
+    '  justify-content:center;gap:10px;background:var(--no);color:#fff;padding:10px 14px;',
+    '  font-size:1rem;font-weight:700;letter-spacing:.02em}',
+    '.rec-dot i{width:13px;height:13px;border-radius:50%;background:#fff;',
     '  animation:recblink 1s steps(2,end) infinite}',
+    '.rec-dot b{font-variant-numeric:tabular-nums;font-weight:700}',
     '@keyframes recblink{50%{opacity:0}}',
+    // a red surround while the camera is actually running
+    '.rec-stage.live{outline:4px solid var(--no);outline-offset:-4px}',
     '.rec-wrap button{width:100%;min-height:52px;margin-bottom:8px;appearance:none;',
     '  border:1px solid var(--line);border-radius:var(--r);background:var(--surface-2);',
     '  color:var(--text);font:inherit;font-weight:560;padding:14px 16px;cursor:pointer}',
@@ -325,7 +331,10 @@ function stopCamera() {
   rec.cv.hidden = true;
   rec.over.hidden = true;
   rec.over.className = 'rec-over';
+  rec.over.textContent = '';
   rec.dot.hidden = true;
+  const st = rec.wrap && rec.wrap.querySelector('.rec-stage');
+  if (st) st.classList.remove('live');
 }
 
 function closeRecorder() {
@@ -419,7 +428,7 @@ async function run(word) {
      which applies the device rotation; drawing into a fixed canvas does not. */
   rec.over.className = 'rec-over';
   rec.over.hidden = false;
-  for (let n = 3; n >= 1; n--) { rec.over.textContent = String(n); await wait(700); }
+  for (let n = 3; n >= 1; n--) { rec.over.textContent = String(n); await wait(1000); }
   rec.over.hidden = true;
 
   const type = pickType();
@@ -452,9 +461,17 @@ async function run(word) {
     review(blob, word);
   };
 
+  rec.dot.innerHTML = '<i></i>Recording <b></b>';
+  const left = rec.dot.querySelector('b');
+  const stage = rec.wrap.querySelector('.rec-stage');
+  stage.classList.add('live');
   rec.dot.hidden = false;
+
   mr.start();
-  await wait(SECS * 1000);
+  /* Count the seconds down while it runs, so there is no moment where you are
+     wondering whether it has started. */
+  for (let n = SECS; n >= 1; n--) { left.textContent = n + 's'; await wait(1000); }
+  stage.classList.remove('live');
   if (mr.state !== 'inactive') mr.stop();
 }
 
@@ -496,6 +513,11 @@ function review(blob, word) {
       + ' · ' + (blob.type || 'unknown type')
       + ' · ready ' + v.readyState + (v.error ? ' · error ' + v.error.code : '');
     rec.facts.hidden = false;
+    if (v.error) {
+      rec.hint.textContent = 'The clip recorded (' + Math.round(blob.size / 1024)
+        + ' KB) but this phone will not play it back here. Tell Ian: error '
+        + v.error.code + '.';
+    }
   }
   /* canplay as well as loadedmetadata, so the readiness shown is the state it
      settled at rather than a snapshot taken half a second too early. */
@@ -542,4 +564,5 @@ function addTryButton() {
   b.addEventListener('click', function () { openRecorder(''); });
   el.in.insertBefore(b, el.signout);
 }
+
 

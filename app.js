@@ -9,7 +9,7 @@
   /* Shown in Settings, so it is possible to tell from the phone which build is
      running. Bump it when releasing, and tag the commit to match. The cache
      name in sw.js is a separate thing: that only tells the phone to refetch. */
-  var APP_VERSION = '1.5.2';
+  var APP_VERSION = '1.5.3';
 
   var FAV_KEY = 'signcards.favourites.v1';
   var SET_KEY = 'signcards.settings.v1';
@@ -290,8 +290,12 @@
 
     var v = document.createElement('video');
     /* The #t fragment makes the browser paint that frame as a still rather than
-       leaving a black box until the clip is played. */
-    v.src = videoUrl(u) + '#t=0.001';
+       leaving a black box until the clip is played. Never on a blob: URL: iOS
+       rejects the whole source with MEDIA_ERR_SRC_NOT_SUPPORTED when a
+       fragment is tacked onto one, and a clip already on the device has no
+       download to wait through anyway. */
+    var src = videoUrl(u);
+    v.src = src.slice(0, 5) === 'blob:' ? src : src + '#t=0.001';
     v.loop = true;
     v.muted = true;
     v.playsInline = true;
