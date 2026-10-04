@@ -71,6 +71,7 @@ function paint(user, msg) {
   [el.email, el.pass, el.name, el.signin].forEach((n) => { n.disabled = !on || busy; });
 
   if (user) {
+    addTryButton();
     el.who.textContent = 'Signed in as ' + (state.name || user.email) + '.';
     el.note.textContent = msg || 'Clips you record will carry your name.';
     return;
@@ -204,4 +205,313 @@ if (ready) {
       .then(() => paint(fb.auth.currentUser))
       .catch(() => paint(null, 'Could not reach the class server. Everything else still works.'));
   }
+}
+
+/* ======================================================================
+   The recorder
+
+   Settings taken from what the phone actually produced in camera-test.html,
+   not from guesswork:
+
+     640x480 4:3   signbsl is 4:3 in nine of fourteen clips sampled, and
+                   landscape in all of them
+     3 seconds     their clips run 1.2-5.3s, median near 3
+     500 kbps      Safari delivers about 1.95x what is asked, so this lands
+                   near 970 kbps and ~354 KB - better quality than signbsl's
+                   own clips, which measure 61-164 KB at lower resolution
+     mp4 first     a webm clip would be unplayable on every iPhone in the class
+
+   Nothing is uploaded or saved yet. This step exists to get the feel of the
+   capture right before any of it is wired into Search.
+   ====================================================================== */
+
+const OUT = [640, 480];
+const SECS = 3;
+const ASK = 500000;
+const TYPES = ['video/mp4', 'video/mp4;codecs=avc1', 'video/webm'];
+
+let rec = null;        // the overlay, built once, on first use
+
+function styleOnce() {
+  if (document.getElementById('collab-style')) return;
+  const s = document.createElement('style');
+  s.id = 'collab-style';
+  s.textContent = [
+    '.rec-wrap{position:fixed;inset:0;z-index:60;background:var(--bg);overflow-y:auto;',
+    '  padding:calc(env(safe-area-inset-top) + 16px) 18px calc(env(safe-area-inset-bottom) + 24px)}',
+    '.rec-wrap[hidden]{display:none}',
+    '.rec-inner{max-width:620px;margin:0 auto}',
+    '.rec-wrap h2{font-size:1.25rem;font-weight:650;letter-spacing:-.02em;margin:0 0 4px}',
+    '.rec-wrap p{margin:0 0 14px}',
+    '.rec-stage{position:relative;width:100%;aspect-ratio:4/3;background:#000;border-radius:var(--r);',
+    '  overflow:hidden;margin-bottom:14px}',
+    '.rec-stage video,.rec-stage canvas{width:100%;height:100%;object-fit:cover;display:block;background:#000}',
+    '.rec-over{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;',
+    '  background:rgba(0,0,0,.3);color:#fff;font-size:4.5rem;font-weight:700;',
+    '  text-shadow:0 2px 24px rgba(0,0,0,.8)}',
+    '.rec-over.say{font-size:1.05rem;font-weight:600;text-align:center;padding:0 28px;line-height:1.45}',
+    '.rec-dot{position:absolute;top:10px;left:10px;display:flex;align-items:center;gap:7px;',
+    '  background:rgba(0,0,0,.55);padding:5px 11px;border-radius:999px;font-size:.8rem;',
+    '  font-weight:600;color:#fff}',
+    '.rec-dot i{width:9px;height:9px;border-radius:50%;background:var(--no);',
+    '  animation:recblink 1s steps(2,end) infinite}',
+    '@keyframes recblink{50%{opacity:0}}',
+    '.rec-wrap button{width:100%;min-height:52px;margin-bottom:8px;appearance:none;',
+    '  border:1px solid var(--line);border-radius:var(--r);background:var(--surface-2);',
+    '  color:var(--text);font:inherit;font-weight:560;padding:14px 16px;cursor:pointer}',
+    '.rec-wrap button.go{background:var(--accent);border-color:var(--accent);color:#2a1d02}',
+    '.rec-wrap button.keep{background:var(--yes);border-color:var(--yes);color:#08210f}',
+    '.rec-wrap button.quiet{background:transparent;border-color:transparent;color:var(--muted)}',
+    '.rec-wrap button:disabled{opacity:.45}',
+    '.rec-facts{font-size:.84rem;color:var(--muted);margin-bottom:14px}',
+    '.rec-facts b{color:var(--text)}'
+  ].join('\n');
+  document.head.appendChild(s);
+}
+
+function build() {
+  if (rec) return rec;
+  styleOnce();
+  const w = document.createElement('div');
+  w.className = 'rec-wrap';
+  w.hidden = true;
+  w.innerHTML =
+    '<div class="rec-inner">' +
+      '<h2 id="rw-title">Record a clip</h2>' +
+      '<p class="muted" id="rw-hint"></p>' +
+      '<div class="rec-stage">' +
+        '<video id="rw-pv" playsinline webkit-playsinline muted hidden></video>' +
+        '<canvas id="rw-cv" hidden></canvas>' +
+        '<video id="rw-pb" playsinline webkit-playsinline controls hidden></video>' +
+        '<div class="rec-over" id="rw-over" hidden></div>' +
+        '<div class="rec-dot" id="rw-dot" hidden><i></i>recording</div>' +
+      '</div>' +
+      '<p class="rec-facts" id="rw-facts" hidden></p>' +
+      '<div id="rw-btns"></div>' +
+    '</div>';
+  document.body.appendChild(w);
+  rec = {
+    wrap: w,
+    title: w.querySelector('#rw-title'), hint: w.querySelector('#rw-hint'),
+    pv: w.querySelector('#rw-pv'), cv: w.querySelector('#rw-cv'), pb: w.querySelector('#rw-pb'),
+    over: w.querySelector('#rw-over'), dot: w.querySelector('#rw-dot'),
+    facts: w.querySelector('#rw-facts'), btns: w.querySelector('#rw-btns'),
+    stream: null, drawing: false, tick: null, blob: null, url: null
+  };
+  return rec;
+}
+
+function buttons(list) {
+  rec.btns.innerHTML = '';
+  list.forEach(function (item) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = item[0];
+    if (item[1]) b.className = item[1];
+    b.addEventListener('click', item[2]);
+    rec.btns.appendChild(b);
+  });
+}
+
+/* Belt and braces. Every way out goes through this, so the camera light
+   cannot be left on. */
+function stopCamera() {
+  if (!rec) return;
+  rec.drawing = false;
+  if (rec.tick) { clearInterval(rec.tick); rec.tick = null; }
+  if (rec.stream) { rec.stream.getTracks().forEach(function (t) { t.stop(); }); rec.stream = null; }
+  rec.pv.srcObject = null;
+  rec.pv.hidden = true;
+  rec.cv.hidden = true;
+  rec.over.hidden = true;
+  rec.over.className = 'rec-over';
+  rec.dot.hidden = true;
+}
+
+function closeRecorder() {
+  stopCamera();
+  if (rec.url) { URL.revokeObjectURL(rec.url); rec.url = null; }
+  rec.blob = null;
+  rec.pb.hidden = true;
+  rec.pb.removeAttribute('src');
+  rec.facts.hidden = true;
+  rec.wrap.hidden = true;
+  document.body.style.overflow = '';
+}
+
+window.addEventListener('pagehide', function () { if (rec) stopCamera(); });
+document.addEventListener('visibilitychange', function () {
+  if (document.visibilityState === 'hidden' && rec) stopCamera();
+});
+
+function pickType() {
+  if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return '';
+  for (const t of TYPES) if (MediaRecorder.isTypeSupported(t)) return t;
+  return '';
+}
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function intro(word) {
+  rec.title.textContent = word ? 'Record “' + word + '”' : 'Record a clip';
+  rec.hint.textContent = 'Prop the phone sideways, so the frame is the same shape as the '
+    + 'dictionary’s clips. You get a 3, 2, 1 countdown and then ' + SECS + ' seconds.';
+  rec.pb.hidden = true;
+  rec.facts.hidden = true;
+  buttons([
+    ['Start the countdown', 'go', function () { run(word); }],
+    ['Cancel', 'quiet', closeRecorder]
+  ]);
+}
+
+async function run(word) {
+  buttons([]);
+  rec.pb.hidden = true;
+  rec.facts.hidden = true;
+  rec.hint.textContent = '';
+
+  try {
+    rec.stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user', width: { ideal: OUT[0] }, height: { ideal: OUT[1] } },
+      audio: false
+    });
+  } catch (e) {
+    rec.hint.textContent = e && e.name === 'NotAllowedError'
+      ? 'The camera was refused. Allow it for this site, then try again.'
+      : 'Could not open the camera (' + (e && e.name) + ').';
+    buttons([
+      ['Try again', 'go', function () { intro(word); }],
+      ['Cancel', 'quiet', closeRecorder]
+    ]);
+    return;
+  }
+
+  rec.pv.srcObject = rec.stream;
+  try { await rec.pv.play(); } catch (e) { /* autoplay may refuse; frames still arrive */ }
+
+  rec.cv.width = OUT[0];
+  rec.cv.height = OUT[1];
+  rec.cv.hidden = false;
+  const ctx = rec.cv.getContext('2d');
+  rec.drawing = true;
+
+  /* A plain timer, deliberately. requestAnimationFrame and
+     requestVideoFrameCallback are both tied to compositing and starve the
+     moment the page stops being painted - measured at 0.5fps against a
+     timer's 30, and it produced empty files twice. */
+  rec.tick = setInterval(function () {
+    if (!rec.drawing) return;
+    const vw = rec.pv.videoWidth, vh = rec.pv.videoHeight;
+    if (!vw || !vh) return;
+    const scale = Math.max(OUT[0] / vw, OUT[1] / vh);
+    ctx.drawImage(rec.pv, (OUT[0] - vw * scale) / 2, (OUT[1] - vh * scale) / 2,
+                  vw * scale, vh * scale);
+  }, 1000 / 30);
+
+  await wait(300);                       // let a few frames land before capturing
+
+  if (window.innerHeight > window.innerWidth) {
+    rec.over.className = 'rec-over say';
+    rec.over.textContent = 'Turn the phone sideways — portrait will be cropped';
+    rec.over.hidden = false;
+    await wait(2000);
+  }
+
+  rec.over.className = 'rec-over';
+  rec.over.hidden = false;
+  for (let n = 3; n >= 1; n--) { rec.over.textContent = String(n); await wait(700); }
+  rec.over.hidden = true;
+
+  const type = pickType();
+  const opts = { videoBitsPerSecond: ASK };
+  if (type) opts.mimeType = type;
+
+  let mr;
+  try {
+    mr = new MediaRecorder(rec.cv.captureStream(30), opts);
+  } catch (e) {
+    stopCamera();
+    rec.hint.textContent = 'This phone could not start recording (' + (e && e.name) + ').';
+    buttons([['Back', 'quiet', closeRecorder]]);
+    return;
+  }
+
+  const chunks = [];
+  mr.ondataavailable = function (ev) { if (ev.data && ev.data.size) chunks.push(ev.data); };
+  mr.onstop = function () {
+    const blob = new Blob(chunks, { type: type || (chunks[0] && chunks[0].type) || '' });
+    stopCamera();
+    if (!blob.size) {
+      rec.hint.textContent = 'That recording came out empty. Try again.';
+      buttons([
+        ['Try again', 'go', function () { intro(word); }],
+        ['Cancel', 'quiet', closeRecorder]
+      ]);
+      return;
+    }
+    review(blob, word);
+  };
+
+  rec.dot.hidden = false;
+  mr.start();
+  await wait(SECS * 1000);
+  if (mr.state !== 'inactive') mr.stop();
+}
+
+function review(blob, word) {
+  rec.blob = blob;
+  if (rec.url) URL.revokeObjectURL(rec.url);
+  rec.url = URL.createObjectURL(blob);
+
+  rec.cv.hidden = true;
+  rec.pb.hidden = false;
+  rec.pb.src = rec.url;
+
+  rec.title.textContent = 'How does that look?';
+  rec.hint.textContent = 'Play it back. If the sign is clear and all of it is in frame, keep it.';
+
+  rec.pb.onloadedmetadata = function () {
+    const dur = isFinite(rec.pb.duration) ? rec.pb.duration.toFixed(1) + 's' : SECS + 's';
+    rec.facts.innerHTML = '<b>' + Math.round(blob.size / 1024) + ' KB</b> · '
+      + rec.pb.videoWidth + '×' + rec.pb.videoHeight + ' · ' + dur
+      + ' · ' + (blob.type || 'unknown type');
+    rec.facts.hidden = false;
+  };
+
+  buttons([
+    ['Keep it', 'keep', function () {
+      /* Publishing is the next piece of work. Saying so beats a button that
+         looks as though it did something. */
+      rec.hint.textContent = '';
+      rec.title.textContent = 'Kept — for now';
+      rec.pb.hidden = true;
+      rec.facts.innerHTML = 'That clip is <b>' + Math.round(blob.size / 1024) + ' KB</b>. '
+        + 'Nothing has been uploaded or saved: publishing comes next.';
+      rec.facts.hidden = false;
+      buttons([['Done', 'go', closeRecorder]]);
+    }],
+    ['Record it again', '', function () { intro(word); }],
+    ['Throw it away', 'quiet', closeRecorder]
+  ]);
+}
+
+function openRecorder(word) {
+  build();
+  rec.wrap.hidden = false;
+  document.body.style.overflow = 'hidden';
+  intro(word || '');
+}
+
+/* A temporary way in, while there is nowhere else for it to live. It shows
+   only when signed in, and goes when the word view gains its own button. */
+function addTryButton() {
+  if (!ready || document.getElementById('btn-try-rec')) return;
+  const b = document.createElement('button');
+  b.id = 'btn-try-rec';
+  b.type = 'button';
+  b.className = 'btn';
+  b.style.width = '100%';
+  b.style.marginBottom = '8px';
+  b.textContent = 'Try the recorder';
+  b.addEventListener('click', function () { openRecorder(''); });
+  el.in.insertBefore(b, el.signout);
 }
