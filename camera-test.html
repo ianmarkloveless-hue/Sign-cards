@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#171B29">
+<!-- These three are the point of the exercise. Without apple-mobile-web-app-capable,
+     adding this page to the home screen opens it in a browser view and the test
+     would answer the wrong question. There is deliberately NO manifest link: the
+     app's manifest carries its own start_url and would send you to the app. -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Camera test">
+<title>Sign Cards &mdash; camera test</title>
+<!-- A throwaway page. It is not part of the app: nothing here is loaded by
+     index.html, and the app does not know it exists. It answers three
+     questions before any recording feature gets built:
+
+       1. does the camera work inside the INSTALLED app, not just Safari
+       2. what does a 2-second clip actually weigh
+       3. which container does this phone record, mp4 or webm
+
+     Delete it once those are answered. -->
+<style>
+:root{
+  --bg:#171b29; --surface:#212739; --surface-2:#2b3248; --line:#3a4257;
+  --text:#e9ecf5; --muted:#98a1bd; --accent:#f2b138; --yes:#37b87c; --no:#e2564f;
+  --r:14px; font-size:17px;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;min-height:100%}
+body{
+  background:var(--bg);color:var(--text);line-height:1.45;
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  -webkit-font-smoothing:antialiased;
+  padding:calc(env(safe-area-inset-top) + 14px) 18px calc(env(safe-area-inset-bottom) + 40px);
+  max-width:620px;margin:0 auto;
+}
+h1{font-size:1.4rem;font-weight:650;letter-spacing:-.02em;margin:0 0 2px}
+h2{font-size:.95rem;font-weight:620;margin:28px 0 10px}
+p{margin:0 0 10px}
+.muted{color:var(--muted);font-size:.86rem}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px;margin-bottom:12px}
+button{
+  appearance:none;border:0;border-radius:var(--r);background:var(--surface-2);color:var(--text);
+  font:inherit;font-weight:560;padding:14px 16px;cursor:pointer;width:100%;margin-bottom:8px;min-height:52px;
+}
+button.go{background:var(--accent);color:#2a1d02}
+button:disabled{opacity:.4}
+label.file{display:block}
+label.file input{display:none}
+label.file span{
+  display:flex;align-items:center;justify-content:center;
+  border-radius:var(--r);background:var(--accent);color:#2a1d02;
+  font-weight:560;padding:14px 16px;min-height:52px;cursor:pointer;margin-bottom:8px;
+}
+/* Reserve the space before the stream has a size, exactly as the app does,
+   so the countdown does not jump when the preview appears. */
+.stage{position:relative;width:100%;aspect-ratio:auto 4/3;background:#000;border-radius:var(--r);overflow:hidden;margin-bottom:10px}
+.stage video{width:100%;height:100%;object-fit:cover;display:block;background:#000}
+.over{
+  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-size:4.5rem;font-weight:700;color:#fff;text-shadow:0 2px 24px rgba(0,0,0,.8);
+  background:rgba(0,0,0,.25);
+}
+.rec{position:absolute;top:10px;left:10px;display:flex;align-items:center;gap:7px;
+  background:rgba(0,0,0,.55);padding:5px 10px;border-radius:999px;font-size:.8rem;font-weight:600}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--no);animation:blink 1s steps(2,end) infinite}
+@keyframes blink{50%{opacity:0}}
+table{width:100%;border-collapse:collapse;font-size:.84rem}
+td{padding:5px 0;border-bottom:1px solid var(--line);vertical-align:top}
+td:first-child{color:var(--muted);padding-right:12px;white-space:nowrap}
+td:last-child{text-align:right;font-variant-numeric:tabular-nums;word-break:break-word}
+.ok{color:var(--yes)} .bad{color:var(--no)} .warn{color:var(--accent)}
+.big{font-size:1.6rem;font-weight:700;letter-spacing:-.02em}
+pre{white-space:pre-wrap;word-break:break-all;font-size:.72rem;color:var(--muted);margin:0}
+[hidden]{display:none !important}
+</style>
+</head>
+<body>
+
+<h1>Camera test</h1>
+<p class="muted">Three questions: does the camera work in the installed app, what does a
+2&#8209;second clip weigh, and which format does this phone record. Nothing here is saved or uploaded.</p>
+
+<h2>1 &nbsp;Where this is running</h2>
+<div class="panel"><table id="env"></table></div>
+<p class="muted" id="standalone-note"></p>
+
+<h2>2 &nbsp;System camera</h2>
+<p class="muted">Opens Apple&rsquo;s own camera app. The robust route &mdash; but you get whatever
+the phone shoots. Record about two seconds, then tap use.</p>
+<label class="file">
+  <span>Record with the system camera</span>
+  <input id="pick" type="file" accept="video/*" capture="user">
+</label>
+
+<h2>3 &nbsp;In&#8209;app recording</h2>
+<p class="muted">3&#8209;2&#8209;1, then exactly two seconds, framed like a card. This is the
+designed experience &mdash; and the one that might not work.</p>
+<button class="go" data-w="640" data-h="480">Record 2s at 640&times;480</button>
+<button data-w="480" data-h="360">Record 2s at 480&times;360</button>
+<button data-w="1280" data-h="720">Record 2s at 1280&times;720</button>
+
+<div class="stage" id="stage" hidden>
+  <video id="preview" playsinline webkit-playsinline muted></video>
+  <div class="over" id="over" hidden></div>
+  <div class="rec" id="recbadge" hidden><span class="dot"></span>recording</div>
+</div>
+
+<h2>4 &nbsp;Result</h2>
+<div class="panel" id="resultPanel">
+  <p class="muted" id="noresult">Nothing recorded yet.</p>
+  <div id="result" hidden>
+    <div class="stage"><video id="playback" playsinline webkit-playsinline controls></video></div>
+    <table id="stats"></table>
+  </div>
+</div>
+
+<h2>5 &nbsp;Send this back</h2>
+<button id="copy">Copy all results</button>
+<p class="muted">Paste it into the chat. A screenshot works too.</p>
+<div class="panel"><pre id="dump">{}</pre></div>
+
+<script>
+(function () {
+  'use strict';
+
+  var results = { page: 1, when: new Date().toISOString(), env: {}, runs: [] };
+
+  function $(s) { return document.querySelector(s); }
+  function kb(n) { return n < 1024 * 1024 ? (n / 1024).toFixed(0) + ' KB'
+                                          : (n / 1048576).toFixed(2) + ' MB'; }
+  function rows(el, pairs) {
+    el.innerHTML = '';
+    pairs.forEach(function (p) {
+      var tr = el.insertRow();
+      tr.insertCell().textContent = p[0];
+      var c = tr.insertCell();
+      c.innerHTML = p[1];
+    });
+  }
+  function dump() { $('#dump').textContent = JSON.stringify(results, null, 1); }
+
+  /* ---------------- 1. environment ---------------- */
+
+  var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+                   || navigator.standalone === true;
+
+  var TYPES = ['video/mp4', 'video/mp4;codecs=avc1', 'video/webm',
+               'video/webm;codecs=vp8', 'video/webm;codecs=vp9', 'video/webm;codecs=h264'];
+  var supported = {};
+  if (window.MediaRecorder && MediaRecorder.isTypeSupported) {
+    TYPES.forEach(function (t) { supported[t] = MediaRecorder.isTypeSupported(t); });
+  }
+
+  var e = results.env = {
+    standalone: standalone,
+    secureContext: window.isSecureContext,
+    hasGetUserMedia: !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia),
+    hasMediaRecorder: !!window.MediaRecorder,
+    supportedTypes: supported,
+    screen: [screen.width, screen.height],
+    dpr: window.devicePixelRatio,
+    ua: navigator.userAgent
+  };
+
+  var okTypes = Object.keys(supported).filter(function (k) { return supported[k]; });
+  rows($('#env'), [
+    ['Installed app', standalone ? '<span class="ok">yes &mdash; standalone</span>'
+                                 : '<span class="warn">no &mdash; this is the browser</span>'],
+    ['Secure context', e.secureContext ? '<span class="ok">yes</span>' : '<span class="bad">no</span>'],
+    ['getUserMedia', e.hasGetUserMedia ? '<span class="ok">available</span>' : '<span class="bad">missing</span>'],
+    ['MediaRecorder', e.hasMediaRecorder ? '<span class="ok">available</span>' : '<span class="bad">missing</span>'],
+    ['Records as', okTypes.length ? okTypes.join('<br>') : '<span class="bad">nothing supported</span>'],
+    ['Screen', e.screen[0] + ' &times; ' + e.screen[1] + ' @' + e.dpr + 'x']
+  ]);
+
+  $('#standalone-note').innerHTML = standalone
+    ? 'Good &mdash; this is the installed app, which is what we need to know about.'
+    : '<span class="warn">This is Safari, not the installed app.</span> The camera can behave '
+      + 'differently in the installed app, so please also add this page to your home screen and run it again.';
+
+  dump();
+
+  /* ---------------- shared playback + stats ---------------- */
+
+  var lastUrl = null;
+
+  function show(blob, meta) {
+    if (lastUrl) URL.revokeObjectURL(lastUrl);
+    lastUrl = URL.createObjectURL(blob);
+    var v = $('#playback');
+    v.src = lastUrl;
+
+    $('#noresult').hidden = true;
+    $('#result').hidden = false;
+
+    v.onloadedmetadata = function () {
+      /* Some recorders report Infinity until the clip is seeked. */
+      var dur = isFinite(v.duration) ? v.duration : null;
+      finish(dur);
+      if (dur === null) {
+        v.currentTime = 1e101;
+        v.ontimeupdate = function () {
+          v.ontimeupdate = null;
+          if (isFinite(v.duration)) finish(v.duration);
+          v.currentTime = 0;
+        };
+      }
+    };
+
+    function finish(dur) {
+      meta.width = v.videoWidth;
+      meta.height = v.videoHeight;
+      meta.duration = dur ? Number(dur.toFixed(2)) : 'unknown';
+      meta.bytes = blob.size;
+      meta.perSecond = dur ? Math.round(blob.size / dur) : null;
+
+      var perGb = Math.floor(1073741824 / blob.size);
+      rows($('#stats'), [
+        ['How it was made', meta.how],
+        ['Size', '<span class="big">' + kb(blob.size) + '</span>'],
+        ['Type', blob.type || '<span class="warn">not reported</span>'],
+        ['Dimensions', meta.width + ' &times; ' + meta.height],
+        ['Length', meta.duration === 'unknown' ? 'unknown' : meta.duration + ' s'],
+        ['Asked for', meta.asked || '&mdash;'],
+        ['Camera gave', meta.got || '&mdash;'],
+        ['Clips per GB', '~' + perGb.toLocaleString()],
+        ['20 a week fills 1 GB in', (perGb / 20 / 52).toFixed(1) + ' years']
+      ]);
+
+      results.runs.push(meta);
+      dump();
+    }
+  }
+
+  /* ---------------- 2. system camera ---------------- */
+
+  $('#pick').addEventListener('change', function () {
+    var f = this.files && this.files[0];
+    if (!f) return;
+    show(f, { how: 'system camera', mime: f.type, name: f.name });
+    this.value = '';
+  });
+
+  /* ---------------- 3. in-app recording ---------------- */
+
+  var stream = null, recorder = null;
+
+  /* Belt and braces: whatever happens, the camera light goes out. */
+  function stopCamera() {
+    if (stream) { stream.getTracks().forEach(function (t) { t.stop(); }); stream = null; }
+    $('#preview').srcObject = null;
+    $('#stage').hidden = true;
+    $('#over').hidden = true;
+    $('#recbadge').hidden = true;
+  }
+  window.addEventListener('pagehide', stopCamera);
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'hidden') stopCamera();
+  });
+
+  function pickType() {
+    /* mp4 first: webm will not play on an iPhone, so a webm clip would be
+       invisible to most of the class. */
+    for (var i = 0; i < TYPES.length; i++) if (supported[TYPES[i]]) return TYPES[i];
+    return '';
+  }
+
+  function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+  function fail(msg) {
+    stopCamera();
+    results.runs.push({ how: 'in-app recording', error: msg });
+    dump();
+    $('#noresult').hidden = false;
+    $('#noresult').innerHTML = '<span class="bad">' + msg + '</span>';
+    $('#result').hidden = true;
+    setButtons(false);
+  }
+
+  function setButtons(busy) {
+    [].forEach.call(document.querySelectorAll('button[data-w]'), function (b) { b.disabled = busy; });
+  }
+
+  async function record(w, h) {
+    setButtons(true);
+    var meta = { how: 'in-app recording', asked: w + ' × ' + h };
+
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: { ideal: w }, height: { ideal: h } },
+        audio: false
+      });
+    } catch (err) {
+      return fail('Camera refused: ' + err.name + ' — ' + err.message);
+    }
+
+    var s = stream.getVideoTracks()[0].getSettings ? stream.getVideoTracks()[0].getSettings() : {};
+    meta.got = (s.width || '?') + ' × ' + (s.height || '?') + (s.frameRate ? ' @' + Math.round(s.frameRate) + 'fps' : '');
+
+    $('#stage').hidden = false;
+    var pv = $('#preview');
+    pv.srcObject = stream;
+    try { await pv.play(); } catch (err) { /* autoplay can refuse; the preview still fills in */ }
+
+    $('#stage').scrollIntoView({ block: 'center' });
+
+    var over = $('#over');
+    over.hidden = false;
+    for (var n = 3; n >= 1; n--) { over.textContent = String(n); await wait(700); }
+    over.hidden = true;
+
+    var type = pickType();
+    meta.recordedAs = type || '(browser default)';
+    var chunks = [];
+    try {
+      recorder = type ? new MediaRecorder(stream, { mimeType: type }) : new MediaRecorder(stream);
+    } catch (err) {
+      return fail('MediaRecorder refused: ' + err.name + ' — ' + err.message);
+    }
+
+    recorder.ondataavailable = function (ev) { if (ev.data && ev.data.size) chunks.push(ev.data); };
+    recorder.onstop = function () {
+      var blob = new Blob(chunks, { type: type || (chunks[0] && chunks[0].type) || '' });
+      stopCamera();
+      setButtons(false);
+      if (!blob.size) return fail('Recording produced an empty file.');
+      show(blob, meta);
+      $('#result').scrollIntoView({ block: 'start' });
+    };
+
+    $('#recbadge').hidden = false;
+    recorder.start();
+    await wait(2000);
+    if (recorder.state !== 'inactive') recorder.stop();
+  }
+
+  [].forEach.call(document.querySelectorAll('button[data-w]'), function (b) {
+    b.addEventListener('click', function () {
+      record(Number(b.dataset.w), Number(b.dataset.h));
+    });
+  });
+
+  /* ---------------- 5. hand the findings back ---------------- */
+
+  $('#copy').addEventListener('click', function () {
+    var text = JSON.stringify(results, null, 1);
+    var done = function () { $('#copy').textContent = 'Copied — paste it into the chat'; };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, function () { window.prompt('Copy this:', text); });
+    } else {
+      window.prompt('Copy this:', text);
+    }
+  });
+}());
+</script>
+</body>
+</html>
