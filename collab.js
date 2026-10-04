@@ -217,12 +217,16 @@ if (ready) {
                    landscape in all of them
      3 seconds     their clips run 1.2-5.3s, median near 3
      500 kbps      Safari delivers about 1.95x what is asked, so this lands
-                   near 970 kbps and ~354 KB - better quality than signbsl's
-                   own clips, which measure 61-164 KB at lower resolution
+                   near 970 kbps and ~354 KB
      mp4 first     a webm clip would be unplayable on every iPhone in the class
 
-   Nothing is uploaded or saved yet. This step exists to get the feel of the
-   capture right before any of it is wired into Search.
+   This is a normal screen inside #screens, not an overlay, and that is the
+   point rather than a detail. As a position:fixed overlay the clip played
+   correctly - currentTime advancing, readyState 4, no error - and rendered
+   nothing at all on the phone. Video inside a fixed container is a long
+   standing iOS failure. Every video the app already shows sits in an ordinary
+   screen, and those work, so the recorder now lives where they live and the
+   finished clip plays in the app's own .clip wrapper.
    ====================================================================== */
 
 const OUT = [640, 480];
@@ -230,46 +234,44 @@ const SECS = 3;
 const ASK = 500000;
 const TYPES = ['video/mp4', 'video/mp4;codecs=avc1', 'video/webm'];
 
-let rec = null;        // the overlay, built once, on first use
+let rec = null;            // built once, on first use
+let cameFrom = null;       // the screen to put back when this one closes
 
 function styleOnce() {
   if (document.getElementById('collab-style')) return;
   const s = document.createElement('style');
   s.id = 'collab-style';
   s.textContent = [
-    '.rec-wrap{position:fixed;inset:0;z-index:60;background:var(--bg);overflow-y:auto;',
-    '  padding:calc(env(safe-area-inset-top) + 16px) 18px calc(env(safe-area-inset-bottom) + 24px)}',
-    '.rec-wrap[hidden]{display:none}',
-    // display:flex below beats [hidden]'s display:none, so these need saying
-    // out loud or the countdown number and the banner can never be taken away.
-    '.rec-over[hidden],.rec-dot[hidden]{display:none}',
-    '.rec-inner{max-width:620px;margin:0 auto}',
-    '.rec-wrap h2{font-size:1.25rem;font-weight:650;letter-spacing:-.02em;margin:0 0 4px}',
-    '.rec-wrap p{margin:0 0 14px}',
-    '.rec-stage{position:relative;width:100%;aspect-ratio:4/3;background:#000;border-radius:var(--r);',
-    '  overflow:hidden;margin-bottom:14px}',
-    '.rec-stage video,.rec-stage canvas{width:100%;height:100%;object-fit:cover;display:block;background:#000}',
+    // the tab bar would be a way out of a half-finished recording
+    'body.is-recording .tabs{display:none}',
+    '.rec-head{margin:6px 0 14px}',
+    '.rec-head h2{font-size:1.35rem;font-weight:650;letter-spacing:-.02em;margin:0 0 4px}',
+    // the live view. No border-radius or overflow clipping around a video, and
+    // no fixed ancestor anywhere above it.
+    '.rec-stage{position:relative;width:100%;aspect-ratio:4/3;background:#000;margin-bottom:14px}',
+    '.rec-stage > canvas{width:100%;height:100%;display:block;background:#000}',
     '.rec-over{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;',
     '  background:rgba(0,0,0,.3);color:#fff;font-size:4.5rem;font-weight:700;',
     '  text-shadow:0 2px 24px rgba(0,0,0,.8)}',
-    '.rec-over.say{font-size:1.05rem;font-weight:600;text-align:center;padding:0 28px;line-height:1.45}',
+    // display:flex beats [hidden]'s display:none, so this has to be said out
+    // loud or the countdown number can never be taken off the screen.
+    '.rec-over[hidden],.rec-dot[hidden],.rec-stage[hidden],.rec-play[hidden]{display:none}',
     '.rec-dot{position:absolute;top:0;left:0;right:0;display:flex;align-items:center;',
     '  justify-content:center;gap:10px;background:var(--no);color:#fff;padding:10px 14px;',
     '  font-size:1rem;font-weight:700;letter-spacing:.02em}',
     '.rec-dot i{width:13px;height:13px;border-radius:50%;background:#fff;',
     '  animation:recblink 1s steps(2,end) infinite}',
-    '.rec-dot b{font-variant-numeric:tabular-nums;font-weight:700}',
+    '.rec-dot b{font-variant-numeric:tabular-nums}',
     '@keyframes recblink{50%{opacity:0}}',
-    // a red surround while the camera is actually running
     '.rec-stage.live{outline:4px solid var(--no);outline-offset:-4px}',
-    '.rec-wrap button{width:100%;min-height:52px;margin-bottom:8px;appearance:none;',
+    '.rec-play{margin-bottom:14px}',
+    '.rec-btns button{width:100%;min-height:52px;margin-bottom:8px;appearance:none;',
     '  border:1px solid var(--line);border-radius:var(--r);background:var(--surface-2);',
     '  color:var(--text);font:inherit;font-weight:560;padding:14px 16px;cursor:pointer}',
-    '.rec-wrap button.go{background:var(--accent);border-color:var(--accent);color:#2a1d02}',
-    '.rec-wrap button.keep{background:var(--yes);border-color:var(--yes);color:#08210f}',
-    '.rec-wrap button.quiet{background:transparent;border-color:transparent;color:var(--muted)}',
-    '.rec-wrap button:disabled{opacity:.45}',
-    '.rec-facts{font-size:.84rem;color:var(--muted);margin-bottom:14px}',
+    '.rec-btns button.go{background:var(--accent);border-color:var(--accent);color:#2a1d02}',
+    '.rec-btns button.keep{background:var(--yes);border-color:var(--yes);color:#08210f}',
+    '.rec-btns button.quiet{background:transparent;border-color:transparent;color:var(--muted)}',
+    '.rec-facts{font-size:.78rem;color:var(--muted);margin-bottom:14px;line-height:1.6}',
     '.rec-facts b{color:var(--text)}'
   ].join('\n');
   document.head.appendChild(s);
@@ -277,31 +279,35 @@ function styleOnce() {
 
 function build() {
   if (rec) return rec;
+  const screens = document.getElementById('screens');
+  if (!screens) return null;
   styleOnce();
-  const w = document.createElement('div');
-  w.className = 'rec-wrap';
-  w.hidden = true;
-  w.innerHTML =
-    '<div class="rec-inner">' +
-      '<h2 id="rw-title">Record a clip</h2>' +
-      '<p class="muted" id="rw-hint"></p>' +
-      '<div class="rec-stage">' +
-        '<video id="rw-pv" playsinline webkit-playsinline muted hidden></video>' +
-        '<canvas id="rw-cv" hidden></canvas>' +
-        '<div id="rw-pb" hidden></div>' +
-        '<div class="rec-over" id="rw-over" hidden></div>' +
-        '<div class="rec-dot" id="rw-dot" hidden><i></i>recording</div>' +
-      '</div>' +
-      '<p class="rec-facts" id="rw-facts" hidden></p>' +
-      '<div id="rw-btns"></div>' +
-    '</div>';
-  document.body.appendChild(w);
+
+  const sec = document.createElement('section');
+  sec.id = 'screen-record';
+  sec.className = 'screen';
+  sec.hidden = true;
+  sec.innerHTML =
+    '<header class="rec-head"><h2 id="rw-title">Record a clip</h2>' +
+      '<p class="muted" id="rw-hint"></p></header>' +
+    '<div class="rec-stage" id="rw-stage">' +
+      '<video id="rw-pv" playsinline webkit-playsinline muted hidden></video>' +
+      '<canvas id="rw-cv"></canvas>' +
+      '<div class="rec-over" id="rw-over" hidden></div>' +
+      '<div class="rec-dot" id="rw-dot" hidden></div>' +
+    '</div>' +
+    '<div class="rec-play" id="rw-play" hidden></div>' +
+    '<p class="rec-facts" id="rw-facts" hidden></p>' +
+    '<div class="rec-btns" id="rw-btns"></div>';
+  screens.appendChild(sec);
+
   rec = {
-    wrap: w,
-    title: w.querySelector('#rw-title'), hint: w.querySelector('#rw-hint'),
-    pv: w.querySelector('#rw-pv'), cv: w.querySelector('#rw-cv'), pb: w.querySelector('#rw-pb'),
-    over: w.querySelector('#rw-over'), dot: w.querySelector('#rw-dot'),
-    facts: w.querySelector('#rw-facts'), btns: w.querySelector('#rw-btns'),
+    sec: sec,
+    title: sec.querySelector('#rw-title'), hint: sec.querySelector('#rw-hint'),
+    stage: sec.querySelector('#rw-stage'), pv: sec.querySelector('#rw-pv'),
+    cv: sec.querySelector('#rw-cv'), play: sec.querySelector('#rw-play'),
+    over: sec.querySelector('#rw-over'), dot: sec.querySelector('#rw-dot'),
+    facts: sec.querySelector('#rw-facts'), btns: sec.querySelector('#rw-btns'),
     stream: null, drawing: false, tick: null, blob: null, url: null
   };
   return rec;
@@ -327,25 +333,23 @@ function stopCamera() {
   if (rec.tick) { clearInterval(rec.tick); rec.tick = null; }
   if (rec.stream) { rec.stream.getTracks().forEach(function (t) { t.stop(); }); rec.stream = null; }
   rec.pv.srcObject = null;
-  rec.pv.hidden = true;
-  rec.cv.hidden = true;
   rec.over.hidden = true;
-  rec.over.className = 'rec-over';
   rec.over.textContent = '';
   rec.dot.hidden = true;
-  const st = rec.wrap && rec.wrap.querySelector('.rec-stage');
-  if (st) st.classList.remove('live');
+  rec.stage.classList.remove('live');
 }
 
 function closeRecorder() {
   stopCamera();
   if (rec.url) { URL.revokeObjectURL(rec.url); rec.url = null; }
   rec.blob = null;
-  rec.pb.hidden = true;
-  rec.pb.innerHTML = '';          // stops the clip and releases the element
+  rec.play.innerHTML = '';
+  rec.play.hidden = true;
   rec.facts.hidden = true;
-  rec.wrap.hidden = true;
-  document.body.style.overflow = '';
+  rec.sec.hidden = true;
+  document.body.classList.remove('is-recording');
+  if (cameFrom) { cameFrom.hidden = false; cameFrom = null; }
+  window.scrollTo(0, 0);
 }
 
 window.addEventListener('pagehide', function () { if (rec) stopCamera(); });
@@ -365,8 +369,9 @@ function intro(word) {
   rec.hint.textContent = 'Hold the phone however suits you — the clip comes out the same '
     + 'shape as the dictionary’s either way. You get a 3, 2, 1 countdown and then '
     + SECS + ' seconds.';
-  rec.pb.hidden = true;
-  rec.pb.innerHTML = '';          // drop the previous take rather than hide it
+  rec.play.innerHTML = '';
+  rec.play.hidden = true;
+  rec.stage.hidden = false;
   rec.facts.hidden = true;
   buttons([
     ['Start the countdown', 'go', function () { run(word); }],
@@ -376,7 +381,9 @@ function intro(word) {
 
 async function run(word) {
   buttons([]);
-  rec.pb.hidden = true;
+  rec.play.innerHTML = '';
+  rec.play.hidden = true;
+  rec.stage.hidden = false;
   rec.facts.hidden = true;
   rec.hint.textContent = '';
 
@@ -401,14 +408,13 @@ async function run(word) {
 
   rec.cv.width = OUT[0];
   rec.cv.height = OUT[1];
-  rec.cv.hidden = false;
   const ctx = rec.cv.getContext('2d');
   rec.drawing = true;
 
   /* A plain timer, deliberately. requestAnimationFrame and
      requestVideoFrameCallback are both tied to compositing and starve the
      moment the page stops being painted - measured at 0.5fps against a
-     timer's 30, and it produced empty files twice. */
+     timer's 30, and it produced empty files twice before that was understood. */
   rec.tick = setInterval(function () {
     if (!rec.drawing) return;
     const vw = rec.pv.videoWidth, vh = rec.pv.videoHeight;
@@ -421,12 +427,8 @@ async function run(word) {
   await wait(300);                       // let a few frames land before capturing
 
   /* No orientation prompt. iOS hands over camera frames in the sensor's
-     orientation, which is landscape however the phone is held - round 2 of the
-     camera test reported 640x480 either way - and the canvas fixes the output
-     shape in any case. The earlier advice to turn the phone sideways was wrong.
-     Round 1 came out portrait only because it recorded the stream directly,
-     which applies the device rotation; drawing into a fixed canvas does not. */
-  rec.over.className = 'rec-over';
+     orientation, which is landscape however the phone is held, and the canvas
+     fixes the output shape in any case. */
   rec.over.hidden = false;
   for (let n = 3; n >= 1; n--) { rec.over.textContent = String(n); await wait(1000); }
   rec.over.hidden = true;
@@ -463,63 +465,62 @@ async function run(word) {
 
   rec.dot.innerHTML = '<i></i>Recording <b></b>';
   const left = rec.dot.querySelector('b');
-  const stage = rec.wrap.querySelector('.rec-stage');
-  stage.classList.add('live');
+  rec.stage.classList.add('live');
   rec.dot.hidden = false;
 
   mr.start();
-  /* Count the seconds down while it runs, so there is no moment where you are
-     wondering whether it has started. */
   for (let n = SECS; n >= 1; n--) { left.textContent = n + 's'; await wait(1000); }
-  stage.classList.remove('live');
+  rec.stage.classList.remove('live');
   if (mr.state !== 'inactive') mr.stop();
 }
 
 function review(blob, word) {
   rec.blob = blob;
-  rec.pb.innerHTML = '';                            // let go of the old take first
+  rec.play.innerHTML = '';                          // let go of the old take first
   if (rec.url) URL.revokeObjectURL(rec.url);        // then release what it pointed at
   rec.url = URL.createObjectURL(blob);
 
-  rec.cv.hidden = true;
-  rec.pb.hidden = false;
+  /* The live view goes away entirely rather than being covered, so there is
+     nothing stacked over the clip. */
+  rec.stage.hidden = true;
+  rec.play.hidden = false;
 
-  /* The app's own player, not a bare <video>. A plain element showed a black
-     box with Apple's controls over it - no painted first frame, unmuted so iOS
-     would not play it inline, and the native controls that were the first
-     thing asked to go. This is the component every other clip already uses. */
+  /* Built exactly as the word view builds one: the app's .clip wrapper around
+     makeVideo. That combination renders on the phone; a bare video in a fixed
+     overlay did not. */
   const mk = window.SignCards && window.SignCards.makeVideo;
+  const clip = document.createElement('div');
+  clip.className = 'clip';
+  rec.play.appendChild(clip);
+
   let v = null;
   let auto = 'trying';
   if (mk) {
-    const made = mk(rec.url, true);     // autoplay: muted and looping, so it moves at once
-    rec.pb.appendChild(made.wrap);
+    const made = mk(rec.url, true);
+    clip.appendChild(made.wrap);
     v = made.video;
-
-    /* A dictionary clip paints its first frame through the #t fragment on the
-       URL. A blob cannot carry one - iOS rejects the whole source - so nothing
-       is painted until something decodes a frame. If autoplay is refused, and
-       Low Power Mode refuses it even for muted video, the result is a blank
-       box with no error and readyState 4: exactly what was reported. Nudging
-       currentTime forces a frame to be drawn whether it plays or not. */
-    v.addEventListener('loadeddata', function () {
-      if (v.paused) { try { v.currentTime = 0.05; } catch (e) { /* ignore */ } }
-    });
-
-    /* makeVideo swallows the outcome of play(). Ask again and keep the answer,
-       so a blank picture can be told apart from a refused one. */
-    v.play().then(
-      function () { auto = 'playing'; facts(); },
-      function (err) { auto = 'autoplay refused (' + (err && err.name) + ')'; facts(); }
-    );
   } else {
     v = document.createElement('video');
-    v.src = rec.url + '#t=0.001';
+    v.src = rec.url;
     v.loop = true; v.muted = true; v.playsInline = true; v.controls = true;
     v.setAttribute('playsinline', ''); v.setAttribute('webkit-playsinline', '');
     v.style.width = '100%';
-    rec.pb.appendChild(v);
+    clip.appendChild(v);
   }
+
+  /* A dictionary clip paints its first frame through the #t fragment on the
+     URL. A blob cannot carry one - iOS rejects the whole source - so nothing
+     is painted until something decodes a frame. Nudging currentTime forces one
+     to be drawn whether it plays or not. */
+  v.addEventListener('loadeddata', function () {
+    if (v.paused) { try { v.currentTime = 0.05; } catch (e) { /* ignore */ } }
+  });
+
+  /* makeVideo swallows the outcome of play(). Ask again and keep the answer. */
+  v.play().then(
+    function () { auto = 'playing'; facts(); },
+    function (err) { auto = 'autoplay refused (' + (err && err.name) + ')'; facts(); }
+  );
 
   rec.title.textContent = 'How does that look?';
   rec.hint.textContent = 'It should play on a loop — tap the picture if it does not. '
@@ -527,11 +528,18 @@ function review(blob, word) {
 
   function facts() {
     const dur = isFinite(v.duration) ? v.duration.toFixed(1) + 's' : SECS + 's';
+    const b = v.getBoundingClientRect();
+    /* The geometry is here because a clip once played perfectly while showing
+       nothing at all, and the numbers are the only way to tell that apart from
+       a clip that simply is not running. */
     rec.facts.innerHTML = '<b>' + Math.round(blob.size / 1024) + ' KB</b> · '
       + v.videoWidth + '×' + v.videoHeight + ' · ' + dur
       + ' · ' + (blob.type || 'unknown type')
       + ' · ready ' + v.readyState + (v.error ? ' · error ' + v.error.code : '')
-      + ' · ' + (v.paused ? 'paused' : 'playing') + ' · ' + auto;
+      + ' · ' + (v.paused ? 'paused' : 'playing') + ' · ' + auto
+      + '<br>box ' + Math.round(b.width) + '×' + Math.round(b.height)
+      + ' · ' + getComputedStyle(v).visibility
+      + ' · opacity ' + getComputedStyle(v).opacity;
     rec.facts.hidden = false;
     if (v.error) {
       rec.hint.textContent = 'The clip recorded (' + Math.round(blob.size / 1024)
@@ -539,8 +547,6 @@ function review(blob, word) {
         + v.error.code + '.';
     }
   }
-  /* canplay as well as loadedmetadata, so the readiness shown is the state it
-     settled at rather than a snapshot taken half a second too early. */
   v.addEventListener('loadedmetadata', facts);
   v.addEventListener('canplay', facts);
   v.addEventListener('error', facts);
@@ -548,11 +554,9 @@ function review(blob, word) {
 
   buttons([
     ['Keep it', 'keep', function () {
-      /* Publishing is the next piece of work. Saying so beats a button that
-         looks as though it did something. */
       rec.hint.textContent = '';
       rec.title.textContent = 'Kept — for now';
-      rec.pb.hidden = true;
+      rec.play.hidden = true;
       rec.facts.innerHTML = 'That clip is <b>' + Math.round(blob.size / 1024) + ' KB</b>. '
         + 'Nothing has been uploaded or saved: publishing comes next.';
       rec.facts.hidden = false;
@@ -564,14 +568,18 @@ function review(blob, word) {
 }
 
 function openRecorder(word) {
-  build();
-  rec.wrap.hidden = false;
-  document.body.style.overflow = 'hidden';
+  if (!build()) return;
+  cameFrom = document.querySelector('#screens > .screen:not([hidden])');
+  const all = document.querySelectorAll('#screens > .screen');
+  for (let i = 0; i < all.length; i++) all[i].hidden = true;
+  rec.sec.hidden = false;
+  document.body.classList.add('is-recording');
+  window.scrollTo(0, 0);
   intro(word || '');
 }
 
 /* A temporary way in, while there is nowhere else for it to live. It shows
-   only when signed in, and goes when the word view gains its own button. */
+   only when signed in, and goes when the word view gains its own. */
 function addTryButton() {
   if (!ready || document.getElementById('btn-try-rec')) return;
   const b = document.createElement('button');
@@ -584,7 +592,4 @@ function addTryButton() {
   b.addEventListener('click', function () { openRecorder(''); });
   el.in.insertBefore(b, el.signout);
 }
-
-
-
 
