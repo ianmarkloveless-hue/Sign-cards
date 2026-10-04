@@ -12,15 +12,19 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Camera test">
 <title>Sign Cards &mdash; camera test</title>
-<!-- A throwaway page. It is not part of the app: nothing here is loaded by
-     index.html, and the app does not know it exists. It answers three
-     questions before any recording feature gets built:
+<!-- Throwaway. Not part of the app: nothing in index.html loads it, it is not in
+     the service worker's SHELL, and app.js does not know it exists.
 
-       1. does the camera work inside the INSTALLED app, not just Safari
-       2. what does a 2-second clip actually weigh
-       3. which container does this phone record, mp4 or webm
+     Round 1 established that the camera works in the installed app and records
+     mp4, but that an uncapped MediaRecorder produced 2.24 MB for two seconds -
+     9.4 Mbps, about ten times what the clip needs. Round 2 asks two things:
 
-     Delete it once those are answered. -->
+       1. does Safari honour videoBitsPerSecond, and at what size
+       2. can we record 4:3 LANDSCAPE to match signbsl, when the phone is
+          naturally held portrait
+
+     Sampled from the dictionary, signbsl clips are 4:3 landscape (9 of 14),
+     with 16:9 and 5:4 making up the rest. None are portrait. -->
 <style>
 :root{
   --bg:#171b29; --surface:#212739; --surface-2:#2b3248; --line:#3a4257;
@@ -37,7 +41,7 @@ body{
   max-width:620px;margin:0 auto;
 }
 h1{font-size:1.4rem;font-weight:650;letter-spacing:-.02em;margin:0 0 2px}
-h2{font-size:.95rem;font-weight:620;margin:28px 0 10px}
+h2{font-size:.95rem;font-weight:620;margin:26px 0 10px}
 p{margin:0 0 10px}
 .muted{color:var(--muted);font-size:.86rem}
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px;margin-bottom:12px}
@@ -47,22 +51,26 @@ button{
 }
 button.go{background:var(--accent);color:#2a1d02}
 button:disabled{opacity:.4}
-label.file{display:block}
+select{
+  width:100%;appearance:none;border:1px solid var(--line);background:var(--surface-2);
+  color:var(--text);font:inherit;padding:13px 15px;border-radius:var(--r);margin-bottom:10px;
+}
 label.file input{display:none}
 label.file span{
-  display:flex;align-items:center;justify-content:center;
-  border-radius:var(--r);background:var(--accent);color:#2a1d02;
-  font-weight:560;padding:14px 16px;min-height:52px;cursor:pointer;margin-bottom:8px;
+  display:flex;align-items:center;justify-content:center;border-radius:var(--r);
+  background:var(--surface-2);color:var(--text);font-weight:560;padding:14px 16px;
+  min-height:52px;cursor:pointer;margin-bottom:8px;
 }
-/* Reserve the space before the stream has a size, exactly as the app does,
-   so the countdown does not jump when the preview appears. */
-.stage{position:relative;width:100%;aspect-ratio:auto 4/3;background:#000;border-radius:var(--r);overflow:hidden;margin-bottom:10px}
-.stage video{width:100%;height:100%;object-fit:cover;display:block;background:#000}
+.field{margin-bottom:2px}
+.field > b{display:block;font-size:.78rem;font-weight:600;color:var(--muted);margin-bottom:5px}
+/* 4:3, the shape signbsl uses, so the preview frames what will be captured. */
+.stage{position:relative;width:100%;aspect-ratio:4/3;background:#000;border-radius:var(--r);overflow:hidden;margin-bottom:10px}
+.stage video,.stage canvas{width:100%;height:100%;object-fit:cover;display:block;background:#000}
 .over{
   position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-  font-size:4.5rem;font-weight:700;color:#fff;text-shadow:0 2px 24px rgba(0,0,0,.8);
-  background:rgba(0,0,0,.25);
+  font-size:4.5rem;font-weight:700;color:#fff;text-shadow:0 2px 24px rgba(0,0,0,.8);background:rgba(0,0,0,.25);
 }
+.over.small{font-size:1.05rem;font-weight:600;text-align:center;padding:0 24px;line-height:1.4}
 .rec{position:absolute;top:10px;left:10px;display:flex;align-items:center;gap:7px;
   background:rgba(0,0,0,.55);padding:5px 10px;border-radius:999px;font-size:.8rem;font-weight:600}
 .dot{width:9px;height:9px;border-radius:50%;background:var(--no);animation:blink 1s steps(2,end) infinite}
@@ -72,188 +80,227 @@ td{padding:5px 0;border-bottom:1px solid var(--line);vertical-align:top}
 td:first-child{color:var(--muted);padding-right:12px;white-space:nowrap}
 td:last-child{text-align:right;font-variant-numeric:tabular-nums;word-break:break-word}
 .ok{color:var(--yes)} .bad{color:var(--no)} .warn{color:var(--accent)}
-.big{font-size:1.6rem;font-weight:700;letter-spacing:-.02em}
+.clip{border:1px solid var(--line);border-radius:var(--r);padding:12px;margin-bottom:10px;background:var(--surface)}
+.clip h3{margin:0 0 8px;font-size:.9rem;font-weight:620}
+.clip .size{font-size:1.5rem;font-weight:700;letter-spacing:-.02em}
 pre{white-space:pre-wrap;word-break:break-all;font-size:.72rem;color:var(--muted);margin:0}
 [hidden]{display:none !important}
 </style>
 </head>
 <body>
 
-<h1>Camera test</h1>
-<p class="muted">Three questions: does the camera work in the installed app, what does a
-2&#8209;second clip weigh, and which format does this phone record. Nothing here is saved or uploaded.</p>
+<h1>Camera test &mdash; round 2</h1>
+<p class="muted">Round 1 showed the camera works in the installed app and records mp4, but an
+uncapped recorder produced <b>2.24&nbsp;MB</b> for two seconds. This round asks whether a bitrate
+cap is honoured, and whether we can record <b>4:3 landscape</b> to match signbsl.</p>
 
 <h2>1 &nbsp;Where this is running</h2>
 <div class="panel"><table id="env"></table></div>
 <p class="muted" id="standalone-note"></p>
 
-<h2>2 &nbsp;System camera</h2>
-<p class="muted">Opens Apple&rsquo;s own camera app. The robust route &mdash; but you get whatever
-the phone shoots. Record about two seconds, then tap use.</p>
-<label class="file">
-  <span>Record with the system camera</span>
-  <input id="pick" type="file" accept="video/*" capture="user">
-</label>
+<h2>2 &nbsp;Record</h2>
 
-<h2>3 &nbsp;In&#8209;app recording</h2>
-<p class="muted">3&#8209;2&#8209;1, then exactly two seconds, framed like a card. This is the
-designed experience &mdash; and the one that might not work.</p>
-<button class="go" data-w="640" data-h="480">Record 2s at 640&times;480</button>
-<button data-w="480" data-h="360">Record 2s at 480&times;360</button>
-<button data-w="1280" data-h="720">Record 2s at 1280&times;720</button>
+<div class="field"><b>Frame</b>
+  <select id="mode">
+    <option value="canvas43" selected>4:3 landscape 640&times;480 &mdash; like signbsl</option>
+    <option value="canvas43s">4:3 landscape 480&times;360 &mdash; like signbsl, smaller</option>
+    <option value="direct">Straight from the camera &mdash; whatever shape it gives</option>
+  </select>
+</div>
+
+<div class="field"><b>Quality</b>
+  <select id="rate">
+    <option value="500000">500 kbps &mdash; smallest</option>
+    <option value="800000" selected>800 kbps</option>
+    <option value="1500000">1.5 Mbps</option>
+    <option value="0">No cap &mdash; what round 1 did</option>
+  </select>
+</div>
+
+<div class="field"><b>Length</b>
+  <select id="secs">
+    <option value="2" selected>2 seconds</option>
+    <option value="3">3 seconds &mdash; closer to signbsl's average</option>
+  </select>
+</div>
+
+<button class="go" id="rec">Record</button>
 
 <div class="stage" id="stage" hidden>
-  <video id="preview" playsinline webkit-playsinline muted></video>
+  <video id="preview" playsinline webkit-playsinline muted hidden></video>
+  <canvas id="canvas" hidden></canvas>
   <div class="over" id="over" hidden></div>
   <div class="rec" id="recbadge" hidden><span class="dot"></span>recording</div>
 </div>
 
-<h2>4 &nbsp;Result</h2>
-<div class="panel" id="resultPanel">
-  <p class="muted" id="noresult">Nothing recorded yet.</p>
-  <div id="result" hidden>
-    <div class="stage"><video id="playback" playsinline webkit-playsinline controls></video></div>
-    <table id="stats"></table>
-  </div>
-</div>
+<p class="muted">Record each quality once and play them back against each other. The question is
+not the number &mdash; it is whether you can still read the handshape.</p>
 
-<h2>5 &nbsp;Send this back</h2>
+<label class="file">
+  <span>Or record with the system camera</span>
+  <input id="pick" type="file" accept="video/*" capture="user">
+</label>
+
+<h2>3 &nbsp;Clips from this session</h2>
+<div id="clips"><p class="muted" id="noclips">Nothing recorded yet.</p></div>
+
+<h2>4 &nbsp;Send this back</h2>
 <button id="copy">Copy all results</button>
-<p class="muted">Paste it into the chat. A screenshot works too.</p>
+<p class="muted">Paste it into the chat. Screenshots work too.</p>
 <div class="panel"><pre id="dump">{}</pre></div>
 
 <script>
 (function () {
   'use strict';
 
-  var results = { page: 1, when: new Date().toISOString(), env: {}, runs: [] };
-
+  var results = { page: 2, when: new Date().toISOString(), env: {}, runs: [] };
   function $(s) { return document.querySelector(s); }
-  function kb(n) { return n < 1024 * 1024 ? (n / 1024).toFixed(0) + ' KB'
-                                          : (n / 1048576).toFixed(2) + ' MB'; }
+  function kb(n) { return n < 1048576 ? (n / 1024).toFixed(0) + ' KB' : (n / 1048576).toFixed(2) + ' MB'; }
   function rows(el, pairs) {
     el.innerHTML = '';
     pairs.forEach(function (p) {
       var tr = el.insertRow();
       tr.insertCell().textContent = p[0];
-      var c = tr.insertCell();
-      c.innerHTML = p[1];
+      tr.insertCell().innerHTML = p[1];
     });
   }
   function dump() { $('#dump').textContent = JSON.stringify(results, null, 1); }
 
-  /* ---------------- 1. environment ---------------- */
+  /* ---------------- environment ---------------- */
 
   var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
                    || navigator.standalone === true;
-
-  var TYPES = ['video/mp4', 'video/mp4;codecs=avc1', 'video/webm',
-               'video/webm;codecs=vp8', 'video/webm;codecs=vp9', 'video/webm;codecs=h264'];
+  var TYPES = ['video/mp4', 'video/mp4;codecs=avc1', 'video/webm', 'video/webm;codecs=vp8'];
   var supported = {};
   if (window.MediaRecorder && MediaRecorder.isTypeSupported) {
     TYPES.forEach(function (t) { supported[t] = MediaRecorder.isTypeSupported(t); });
   }
+  var canCanvasStream = !!document.createElement('canvas').captureStream;
 
-  var e = results.env = {
+  results.env = {
     standalone: standalone,
     secureContext: window.isSecureContext,
     hasGetUserMedia: !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia),
     hasMediaRecorder: !!window.MediaRecorder,
+    canvasCaptureStream: canCanvasStream,
+    videoFrameCallback: 'requestVideoFrameCallback' in HTMLVideoElement.prototype,
     supportedTypes: supported,
     screen: [screen.width, screen.height],
     dpr: window.devicePixelRatio,
     ua: navigator.userAgent
   };
 
-  var okTypes = Object.keys(supported).filter(function (k) { return supported[k]; });
   rows($('#env'), [
-    ['Installed app', standalone ? '<span class="ok">yes &mdash; standalone</span>'
-                                 : '<span class="warn">no &mdash; this is the browser</span>'],
-    ['Secure context', e.secureContext ? '<span class="ok">yes</span>' : '<span class="bad">no</span>'],
-    ['getUserMedia', e.hasGetUserMedia ? '<span class="ok">available</span>' : '<span class="bad">missing</span>'],
-    ['MediaRecorder', e.hasMediaRecorder ? '<span class="ok">available</span>' : '<span class="bad">missing</span>'],
-    ['Records as', okTypes.length ? okTypes.join('<br>') : '<span class="bad">nothing supported</span>'],
-    ['Screen', e.screen[0] + ' &times; ' + e.screen[1] + ' @' + e.dpr + 'x']
+    ['Installed app', standalone ? '<span class="ok">yes</span>' : '<span class="warn">no &mdash; this is the browser</span>'],
+    ['getUserMedia', results.env.hasGetUserMedia ? '<span class="ok">available</span>' : '<span class="bad">missing</span>'],
+    ['MediaRecorder', results.env.hasMediaRecorder ? '<span class="ok">available</span>' : '<span class="bad">missing</span>'],
+    ['Canvas capture', canCanvasStream ? '<span class="ok">available</span>' : '<span class="bad">missing &mdash; 4:3 modes will not work</span>'],
+    ['Frame callback', results.env.videoFrameCallback ? '<span class="ok">available</span>' : '<span class="warn">missing &mdash; falling back to a timer</span>'],
+    ['Screen', results.env.screen[0] + ' &times; ' + results.env.screen[1] + ' @' + results.env.dpr + 'x']
   ]);
 
   $('#standalone-note').innerHTML = standalone
-    ? 'Good &mdash; this is the installed app, which is what we need to know about.'
-    : '<span class="warn">This is Safari, not the installed app.</span> The camera can behave '
-      + 'differently in the installed app, so please also add this page to your home screen and run it again.';
-
+    ? 'Good &mdash; this is the installed app.'
+    : '<span class="warn">This is the browser, not the installed app.</span> Add it to your home screen and run it again.';
   dump();
 
-  /* ---------------- shared playback + stats ---------------- */
+  /* ---------------- clip list ---------------- */
 
-  var lastUrl = null;
+  var urls = [];
 
-  function show(blob, meta) {
-    if (lastUrl) URL.revokeObjectURL(lastUrl);
-    lastUrl = URL.createObjectURL(blob);
-    var v = $('#playback');
-    v.src = lastUrl;
+  function addClip(blob, meta) {
+    var url = URL.createObjectURL(blob);
+    urls.push(url);
 
-    $('#noresult').hidden = true;
-    $('#result').hidden = false;
+    var v = document.createElement('video');
+    v.playsInline = true; v.setAttribute('webkit-playsinline', ''); v.controls = true; v.src = url;
 
     v.onloadedmetadata = function () {
-      /* Some recorders report Infinity until the clip is seeked. */
       var dur = isFinite(v.duration) ? v.duration : null;
-      finish(dur);
-      if (dur === null) {
+      if (dur === null) {              // some recorders report Infinity until seeked
         v.currentTime = 1e101;
         v.ontimeupdate = function () {
           v.ontimeupdate = null;
-          if (isFinite(v.duration)) finish(v.duration);
+          if (isFinite(v.duration)) render(v.duration);
           v.currentTime = 0;
         };
-      }
+      } else { render(dur); }
     };
 
-    function finish(dur) {
-      meta.width = v.videoWidth;
-      meta.height = v.videoHeight;
-      meta.duration = dur ? Number(dur.toFixed(2)) : 'unknown';
+    function render(dur) {
       meta.bytes = blob.size;
-      meta.perSecond = dur ? Math.round(blob.size / dur) : null;
+      meta.encoded = v.videoWidth + 'x' + v.videoHeight;
+      meta.ratio = (v.videoWidth / v.videoHeight).toFixed(2);
+      meta.duration = Number(dur.toFixed(2));
+      meta.actualBitrate = Math.round(blob.size * 8 / dur);
+      meta.type = blob.type || '(not reported)';
 
       var perGb = Math.floor(1073741824 / blob.size);
-      rows($('#stats'), [
-        ['How it was made', meta.how],
-        ['Size', '<span class="big">' + kb(blob.size) + '</span>'],
-        ['Type', blob.type || '<span class="warn">not reported</span>'],
-        ['Dimensions', meta.width + ' &times; ' + meta.height],
-        ['Length', meta.duration === 'unknown' ? 'unknown' : meta.duration + ' s'],
-        ['Asked for', meta.asked || '&mdash;'],
-        ['Camera gave', meta.got || '&mdash;'],
+      meta.clipsPerGb = perGb;
+
+      var honoured = '&mdash;';
+      if (meta.askedBitrate) {
+        var off = meta.actualBitrate / meta.askedBitrate;
+        honoured = off < 1.4
+          ? '<span class="ok">yes &mdash; ' + (meta.actualBitrate / 1000).toFixed(0) + ' kbps</span>'
+          : '<span class="bad">no &mdash; got ' + (meta.actualBitrate / 1000).toFixed(0) + ' kbps, '
+            + off.toFixed(1) + '&times; the cap</span>';
+        meta.capHonoured = off < 1.4;
+      }
+      var landscape = v.videoWidth > v.videoHeight;
+
+      var box = document.createElement('div');
+      box.className = 'clip';
+      var h = document.createElement('h3');
+      h.textContent = meta.how;
+      box.appendChild(h);
+      var st = document.createElement('div');
+      st.className = 'stage';
+      st.appendChild(v);
+      box.appendChild(st);
+      var t = document.createElement('table');
+      box.appendChild(t);
+      rows(t, [
+        ['Size', '<span class="size">' + kb(blob.size) + '</span>'],
+        ['Asked for', meta.askedBitrate ? (meta.askedBitrate / 1000) + ' kbps' : 'no cap'],
+        ['Cap honoured', honoured],
+        ['Encoded', meta.encoded + ' &nbsp;(' + meta.ratio + ':1)'],
+        ['Shape', landscape
+          ? '<span class="ok">landscape &mdash; like signbsl</span>'
+          : '<span class="warn">portrait &mdash; unlike signbsl</span>'],
+        ['Length', meta.duration + ' s'],
+        ['Type', meta.type],
         ['Clips per GB', '~' + perGb.toLocaleString()],
         ['20 a week fills 1 GB in', (perGb / 20 / 52).toFixed(1) + ' years']
       ]);
 
+      $('#noclips').hidden = true;
+      $('#clips').insertBefore(box, $('#clips').firstChild);
       results.runs.push(meta);
       dump();
     }
   }
 
-  /* ---------------- 2. system camera ---------------- */
+  /* ---------------- system camera ---------------- */
 
   $('#pick').addEventListener('change', function () {
     var f = this.files && this.files[0];
-    if (!f) return;
-    show(f, { how: 'system camera', mime: f.type, name: f.name });
+    if (f) addClip(f, { how: 'System camera', mime: f.type });
     this.value = '';
   });
 
-  /* ---------------- 3. in-app recording ---------------- */
+  /* ---------------- in-app recording ---------------- */
 
-  var stream = null, recorder = null;
+  var stream = null, recorder = null, drawing = false, frames = 0;
 
   /* Belt and braces: whatever happens, the camera light goes out. */
   function stopCamera() {
+    drawing = false;
     if (stream) { stream.getTracks().forEach(function (t) { t.stop(); }); stream = null; }
     $('#preview').srcObject = null;
     $('#stage').hidden = true;
     $('#over').hidden = true;
+    $('#over').className = 'over';
     $('#recbadge').hidden = true;
   }
   window.addEventListener('pagehide', stopCamera);
@@ -262,97 +309,138 @@ designed experience &mdash; and the one that might not work.</p>
   });
 
   function pickType() {
-    /* mp4 first: webm will not play on an iPhone, so a webm clip would be
-       invisible to most of the class. */
+    /* mp4 first. A webm clip would be invisible to every iPhone in the class. */
     for (var i = 0; i < TYPES.length; i++) if (supported[TYPES[i]]) return TYPES[i];
     return '';
   }
-
   function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
 
   function fail(msg) {
     stopCamera();
     results.runs.push({ how: 'in-app recording', error: msg });
     dump();
-    $('#noresult').hidden = false;
-    $('#noresult').innerHTML = '<span class="bad">' + msg + '</span>';
-    $('#result').hidden = true;
-    setButtons(false);
+    $('#rec').disabled = false;
+    alert(msg);
   }
 
-  function setButtons(busy) {
-    [].forEach.call(document.querySelectorAll('button[data-w]'), function (b) { b.disabled = busy; });
-  }
+  async function record() {
+    var mode = $('#mode').value;
+    var want = Number($('#rate').value);
+    var secs = Number($('#secs').value);
+    var out = mode === 'canvas43s' ? [480, 360] : [640, 480];
+    var toCanvas = mode !== 'direct';
 
-  async function record(w, h) {
-    setButtons(true);
-    var meta = { how: 'in-app recording', asked: w + ' × ' + h };
+    $('#rec').disabled = true;
+    var meta = {
+      how: (toCanvas ? out[0] + '×' + out[1] + ' 4:3' : 'Straight from camera')
+           + ' · ' + (want ? (want / 1000) + ' kbps' : 'no cap') + ' · ' + secs + 's',
+      mode: mode, askedBitrate: want || null, seconds: secs
+    };
 
     try {
       stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: w }, height: { ideal: h } },
+        video: { facingMode: 'user', width: { ideal: out[0] }, height: { ideal: out[1] } },
         audio: false
       });
-    } catch (err) {
-      return fail('Camera refused: ' + err.name + ' — ' + err.message);
-    }
+    } catch (err) { return fail('Camera refused: ' + err.name + ' — ' + err.message); }
 
-    var s = stream.getVideoTracks()[0].getSettings ? stream.getVideoTracks()[0].getSettings() : {};
-    meta.got = (s.width || '?') + ' × ' + (s.height || '?') + (s.frameRate ? ' @' + Math.round(s.frameRate) + 'fps' : '');
+    var track = stream.getVideoTracks()[0];
+    var s = track.getSettings ? track.getSettings() : {};
+    meta.cameraGave = (s.width || '?') + 'x' + (s.height || '?') + (s.frameRate ? ' @' + Math.round(s.frameRate) : '');
 
     $('#stage').hidden = false;
-    var pv = $('#preview');
+    var pv = $('#preview'), cv = $('#canvas');
     pv.srcObject = stream;
-    try { await pv.play(); } catch (err) { /* autoplay can refuse; the preview still fills in */ }
+    try { await pv.play(); } catch (err) { /* autoplay may refuse; the frames still arrive */ }
+
+    var recStream = stream;
+    if (toCanvas) {
+      if (!canCanvasStream) return fail('This browser cannot record from a canvas.');
+      cv.width = out[0]; cv.height = out[1];
+      pv.hidden = true; cv.hidden = false;
+      var ctx = cv.getContext('2d');
+      drawing = true;
+      frames = 0;
+
+      /* Cover-crop the camera frame into a fixed 4:3 box, so the clip is the
+         same shape as signbsl's however the phone happens to be held. */
+      function draw() {
+        var vw = pv.videoWidth, vh = pv.videoHeight;
+        if (vw && vh) {
+          var scale = Math.max(out[0] / vw, out[1] / vh);
+          var dw = vw * scale, dh = vh * scale;
+          ctx.drawImage(pv, (out[0] - dw) / 2, (out[1] - dh) / 2, dw, dh);
+          frames++;
+        }
+      }
+
+      /* A plain timer, deliberately. Both requestAnimationFrame and
+         requestVideoFrameCallback are tied to compositing, so they starve the
+         moment the page stops being painted and the clip comes out empty -
+         measured at 0.5fps against a timer's 30. Frame-accurate alignment buys
+         nothing over two seconds; not starving buys everything. */
+      var tick = setInterval(function () {
+        if (!drawing) { clearInterval(tick); return; }
+        draw();
+      }, 1000 / 30);
+
+      await wait(300);                     // let a few frames land before capturing
+      recStream = cv.captureStream(30);
+    } else {
+      pv.hidden = false; cv.hidden = true;
+    }
 
     $('#stage').scrollIntoView({ block: 'center' });
 
     var over = $('#over');
+    if (toCanvas && window.innerHeight > window.innerWidth) {
+      over.className = 'over small';
+      over.textContent = 'Turn the phone sideways for a signbsl-shaped frame — portrait will be cropped';
+      over.hidden = false;
+      await wait(2200);
+    }
+    over.className = 'over';
     over.hidden = false;
     for (var n = 3; n >= 1; n--) { over.textContent = String(n); await wait(700); }
     over.hidden = true;
 
     var type = pickType();
     meta.recordedAs = type || '(browser default)';
+    var opts = {};
+    if (type) opts.mimeType = type;
+    if (want) opts.videoBitsPerSecond = want;
+
     var chunks = [];
-    try {
-      recorder = type ? new MediaRecorder(stream, { mimeType: type }) : new MediaRecorder(stream);
-    } catch (err) {
-      return fail('MediaRecorder refused: ' + err.name + ' — ' + err.message);
-    }
+    try { recorder = new MediaRecorder(recStream, opts); }
+    catch (err) { return fail('MediaRecorder refused: ' + err.name + ' — ' + err.message); }
 
     recorder.ondataavailable = function (ev) { if (ev.data && ev.data.size) chunks.push(ev.data); };
     recorder.onstop = function () {
       var blob = new Blob(chunks, { type: type || (chunks[0] && chunks[0].type) || '' });
       stopCamera();
-      setButtons(false);
-      if (!blob.size) return fail('Recording produced an empty file.');
-      show(blob, meta);
-      $('#result').scrollIntoView({ block: 'start' });
+      $('#rec').disabled = false;
+      meta.framesDrawn = frames;
+      if (!blob.size) return fail('Recording produced an empty file'
+        + (toCanvas ? ' after drawing ' + frames + ' frames.' : '.'));
+      addClip(blob, meta);
     };
 
     $('#recbadge').hidden = false;
     recorder.start();
-    await wait(2000);
+    await wait(secs * 1000);
     if (recorder.state !== 'inactive') recorder.stop();
   }
 
-  [].forEach.call(document.querySelectorAll('button[data-w]'), function (b) {
-    b.addEventListener('click', function () {
-      record(Number(b.dataset.w), Number(b.dataset.h));
-    });
-  });
+  $('#rec').addEventListener('click', record);
 
-  /* ---------------- 5. hand the findings back ---------------- */
+  /* ---------------- hand the findings back ---------------- */
 
   $('#copy').addEventListener('click', function () {
     var text = JSON.stringify(results, null, 1);
     var done = function () { $('#copy').textContent = 'Copied — paste it into the chat'; };
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(text).then(done, function () { window.prompt('Copy this:', text); });
-    } else {
-      window.prompt('Copy this:', text);
-    }
+    } else { window.prompt('Copy this:', text); }
   });
 }());
 </script>
