@@ -9,10 +9,13 @@
   /* Shown in Settings, so it is possible to tell from the phone which build is
      running. Bump it when releasing, and tag the commit to match. The cache
      name in sw.js is a separate thing: that only tells the phone to refetch. */
-  var APP_VERSION = '1.3.1';
+  var APP_VERSION = '1.4';
 
   var FAV_KEY = 'signcards.favourites.v1';
   var SET_KEY = 'signcards.settings.v1';
+  /* One step back from anything on the settings screen that can take progress
+     away. Separate from the deck itself so a failed write cannot touch it. */
+  var UNDO_KEY = 'signcards.undo.v1';
   /* Eight rather than five, so that a word answered correctly many times in a
      row separates from one that has only just reached the top. Existing cards
      keep their box number and climb from there: a card that scraped into the
@@ -1021,7 +1024,8 @@
   /* ---------------- settings ---------------- */
 
   $('#btn-export').addEventListener('click', function () {
-    var blob = new Blob([JSON.stringify({ app: 'signcards', version: 1, favourites: favs }, null, 1)],
+    var blob = new Blob([JSON.stringify({ app: 'signcards', version: 1,
+      saved: new Date().toISOString(), favourites: favs }, null, 1)],
       { type: 'application/json' });
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -1031,41 +1035,179 @@
     setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
   });
 
+  /* ---------------- undo ---------------- */
+
+  /* One slot, taken before anything that can take progress away. Warnings only
+     help when they are read; this helps when they were not. */
+  function snapshot(what) {
+    try {
+      localStorage.setItem(UNDO_KEY, JSON.stringify({ what: what, when: Date.now(), favs: favs }));
+    } catch (e) { /* no room: the action still goes ahead, just without a way back */ }
+    showUndo();
+  }
+
+  function readUndo() {
+    try { return JSON.parse(localStorage.getItem(UNDO_KEY) || 'null'); } catch (e) { return null; }
+  }
+
+  function ago(ms) {
+    var m = Math.round((Date.now() - ms) / 60000);
+    if (m < 1) return 'a moment ago';
+    if (m === 1) return 'a minute ago';
+    if (m < 60) return m + ' minutes ago';
+    var h = Math.round(m / 60);
+    return h === 1 ? 'an hour ago' : h + ' hours ago';
+  }
+
+  function showUndo() {
+    var u = readUndo();
+    $('#undo-panel').hidden = !u;
+    if (u) $('#undo-what').textContent = 'You can put things back as they were before you ' +
+      u.what + ', ' + ago(u.when) + '.';
+  }
+
+  $('#btn-undo').addEventListener('click', function () {
+    var u = readUndo();
+    if (!u) return;
+    favs = u.favs;
+    saveFavs();
+    try { localStorage.removeItem(UNDO_KEY); } catch (e) {}
+    showUndo();
+    openDeck();
+    toast('Put back as it was');
+  });
+
+  /* ---------------- restore ---------------- */
+
+  /* Further on than, for deciding which copy of a card to keep. Box first,
+     then correct answers, then sightings. */
+  function progress(c) {
+    return (c.box || 1) * 1e6 + (c.right || 0) * 1e3 + (c.seen || 0);
+  }
+
+  var pending = null;        // the parsed file, held until a choice is made
+
   $('#btn-import').addEventListener('click', function () { $('#file-import').click(); });
 
   $('#file-import').addEventListener('change', function () {
     var f = this.files && this.files[0];
+    this.value = '';
     if (!f) return;
     var reader = new FileReader();
     reader.onload = function () {
-      try {
-        var data = JSON.parse(reader.result);
-        var incoming = data.favourites || data;
-        var added = 0;
-        Object.keys(incoming).forEach(function (k) {
-          if (!favs[k]) added++;
-          favs[k] = incoming[k];
-        });
-        saveFavs();
-        renderDeck();
-        toast('Restored ' + Object.keys(incoming).length + ' cards (' + added + ' new)');
-      } catch (e) { toast('That file could not be read.'); }
+      var data;
+      try { data = JSON.parse(reader.result); }
+      catch (e) { toast('That file could not be read.'); return; }
+      var incoming = data.favourites || data;
+      if (!incoming || typeof incoming !== 'object') { toast('That file could not be read.'); return; }
+      pending = incoming;
+      describeRestore(incoming, data.saved);
     };
     reader.readAsText(f);
-    this.value = '';
   });
 
+  /* Say what the file would do before a single card is written. Restoring an
+     old backup used to roll every card in it back, silently. */
+  function describeRestore(incoming, saved) {
+    var keys = Object.keys(incoming);
+    var fresh = 0, forward = 0, back = 0, newest = 0, examples = [];
+
+    keys.forEach(function (k) {
+      var theirs = incoming[k], mine = favs[k];
+      if (theirs && theirs.last > newest) newest = theirs.last;
+      if (!mine) { fresh++; return; }
+      var a = progress(mine), b = progress(theirs);
+      if (b > a) forward++;
+      else if (b < a) {
+        back++;
+        if (examples.length < 3) {
+          examples.push(mine.word + ': box ' + (mine.box || 1) + ' back to box ' + (theirs.box || 1));
+        }
+      }
+    });
+
+    var when = saved ? new Date(saved) : (newest ? new Date(newest) : null);
+    var lines = ['This file holds <b>' + keys.length + ' cards</b>' +
+      (when ? ', saved <b>' + when.toLocaleDateString(undefined,
+        { day: 'numeric', month: 'long' }) + '</b>' : '') + '.'];
+    if (fresh) lines.push('<b>' + fresh + '</b> are not in your deck and would be added.');
+    if (forward) lines.push('<b>' + forward + '</b> are further on than yours.');
+    lines.push(back
+      ? '<b class="warnbad">' + back + ' would lose progress</b> if you replace everything.'
+      : 'None of them would lose progress.');
+
+    $('#plan-summary').innerHTML = lines.join(' ');
+    var ul = $('#plan-examples');
+    ul.innerHTML = '';
+    examples.forEach(function (t) {
+      var li = document.createElement('li');
+      li.textContent = t;
+      ul.appendChild(li);
+    });
+    $('#plan-replace').hidden = false;
+    $('#restore-plan').hidden = false;
+    $('#restore-plan').scrollIntoView({ block: 'center' });
+  }
+
+  function applyRestore(mergeOnly) {
+    if (!pending) return;
+    snapshot('restored a backup');
+    var n = 0;
+    Object.keys(pending).forEach(function (k) {
+      var theirs = pending[k], mine = favs[k];
+      if (!mine || !mergeOnly || progress(theirs) > progress(mine)) { favs[k] = theirs; n++; }
+    });
+    pending = null;
+    $('#restore-plan').hidden = true;
+    saveFavs();
+    openDeck();
+    toast(mergeOnly ? 'Merged — ' + n + ' cards taken from the file' : 'Restored ' + n + ' cards');
+  }
+
+  $('#plan-merge').addEventListener('click', function () { applyRestore(true); });
+  $('#plan-replace').addEventListener('click', function () { applyRestore(false); });
+  $('#plan-cancel').addEventListener('click', function () {
+    pending = null;
+    $('#restore-plan').hidden = true;
+    toast('Nothing changed');
+  });
+
+  /* ---------------- reset ---------------- */
+
+  /* Two deliberate taps rather than a dialog, which on a phone is tapped
+     through without reading. The button says what the second tap does. */
+  var armed = 0, disarmTimer = null;
+
+  function disarmReset() {
+    armed = 0;
+    clearTimeout(disarmTimer);
+    var b = $('#btn-reset');
+    b.textContent = 'Reset all scores';
+    b.classList.remove('armed');
+  }
+
   $('#btn-reset').addEventListener('click', function () {
-    if (!confirm('Reset every score back to the start?')) return;
+    if (!armed) {
+      armed = 1;
+      this.textContent = 'Tap again to clear every score';
+      this.classList.add('armed');
+      disarmTimer = setTimeout(disarmReset, 5000);
+      return;
+    }
+    disarmReset();
+    snapshot('reset your scores');
     Object.keys(favs).forEach(function (k) {
       favs[k].box = 1; favs[k].seen = 0; favs[k].right = 0; favs[k].wrong = 0; favs[k].last = 0;
     });
     saveFavs();
-    renderDeck();
-    toast('Scores reset');
+    openDeck();
+    toast('Scores reset — you can undo this');
   });
 
-  $('#btn-starter').addEventListener('click', function () { addStarter(true); });
+  $('#btn-starter').addEventListener('click', function () {
+    if (!confirm('Add about sixty everyday words to your deck?')) return;
+    addStarter(true);
+  });
 
   function addStarter(announce) {
     return fetch('./data/starter-deck.json')
@@ -1136,6 +1278,17 @@
       .catch(function () { el.textContent = 'Your deck is saved on this device.'; });
   }
 
+  /* Settings always opens in its safe state: the guarded section shut, the
+     reset button unarmed, no half-finished restore on screen. */
+  function openSettings() {
+    var care = document.querySelector('.care');
+    if (care) care.open = false;
+    pending = null;
+    $('#restore-plan').hidden = true;
+    disarmReset();
+    showUndo();
+  }
+
   /* ---------------- navigation ---------------- */
 
   $$('.tab').forEach(function (tab) {
@@ -1147,6 +1300,7 @@
       if (name === 'explore') openExplore();
       if (name === 'practise') openPractise();
       if (name === 'deck') openDeck();
+      if (name === 'more') openSettings();
     });
   });
 

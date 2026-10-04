@@ -81,29 +81,78 @@
         <h2>Back up your progress</h2>
         <p class="muted">Your deck and scores live on this phone only. Save a copy now and then.</p>
         <p id="store-status" class="muted">Checking&hellip;</p>
-        <div class="row">
-          <button id="btn-export" class="btn" type="button">Save a backup</button>
-          <button id="btn-import" class="btn" type="button">Restore a backup</button>
+        <button id="btn-export" class="btn btn-save" type="button">Save a backup</button>
+      </div>
+
+      <div class="panel">
+        <h2>Class account</h2>
+        <p class="muted" id="acct-note">Not switched on yet. These are the details you will sign in
+          with once the class dictionary is ready, so that clips you record carry your name.</p>
+        <div id="acct-out">
+          <label class="field"><span>Email</span>
+            <input id="acct-email" type="email" autocomplete="username" inputmode="email"
+                   autocapitalize="none" spellcheck="false" disabled></label>
+          <label class="field"><span>Password</span>
+            <input id="acct-pass" type="password" autocomplete="current-password" disabled></label>
+          <label class="field"><span>Name shown on your clips</span>
+            <input id="acct-name" type="text" autocomplete="name" disabled></label>
+          <button id="btn-signin" class="btn" type="button" disabled>Sign in</button>
         </div>
-        <input id="file-import" type="file" accept="application/json,.json" hidden>
-      </div>
-
-      <div class="panel">
-        <h2>Starter deck</h2>
-        <p class="muted">Around sixty everyday words to get going. Adding it again skips anything already in your deck.</p>
-        <button id="btn-starter" class="btn" type="button">Add the starter deck</button>
-      </div>
-
-      <div class="panel">
-        <h2>Scores</h2>
-        <p class="muted">Clears how well you know each card. Keeps the cards themselves.</p>
-        <button id="btn-reset" class="btn btn-quiet" type="button">Reset all scores</button>
+        <div id="acct-in" hidden>
+          <p id="acct-who"></p>
+          <button id="btn-signout" class="btn btn-quiet" type="button">Sign out</button>
+        </div>
       </div>
 
       <div class="panel">
         <h2>Dictionary</h2>
         <p id="idx-status" class="muted">Checking…</p>
       </div>
+
+      <!-- Shut by default, and shut again every time you come back to Settings,
+           so none of this is one stray tap away. -->
+      <details class="care">
+        <summary>These change your deck</summary>
+        <div class="stack care-body">
+
+          <div class="panel">
+            <h2>Restore a backup</h2>
+            <p class="muted">Reads a file you saved earlier. You are shown exactly what it would
+              change before anything is written.</p>
+            <button id="btn-import" class="btn" type="button">Choose a backup file</button>
+            <input id="file-import" type="file" accept="application/json,.json" hidden>
+          </div>
+
+          <div class="panel plan" id="restore-plan" hidden>
+            <h2 id="plan-title">Restore this backup?</h2>
+            <p id="plan-summary"></p>
+            <ul id="plan-examples" class="muted"></ul>
+            <button id="plan-merge" class="btn btn-save" type="button">Merge &mdash; keep whichever is further on</button>
+            <button id="plan-replace" class="btn btn-danger" type="button">Replace everything</button>
+            <button id="plan-cancel" class="btn btn-quiet" type="button">Cancel</button>
+          </div>
+
+          <div class="panel">
+            <h2>Starter deck</h2>
+            <p class="muted">Around sixty everyday words to get going. Adding it again skips anything
+              already in your deck.</p>
+            <button id="btn-starter" class="btn" type="button">Add the starter deck</button>
+          </div>
+
+          <div class="panel">
+            <h2>Reset all scores</h2>
+            <p class="muted">Clears how well you know each card. Keeps the cards themselves.</p>
+            <button id="btn-reset" class="btn btn-danger" type="button">Reset all scores</button>
+          </div>
+
+          <div class="panel" id="undo-panel" hidden>
+            <h2>Undo</h2>
+            <p class="muted" id="undo-what"></p>
+            <button id="btn-undo" class="btn btn-save" type="button">Undo that</button>
+          </div>
+
+        </div>
+      </details>
 
       <p id="app-version" class="credit"></p>
 
