@@ -55,6 +55,45 @@ a{color:var(--accent)}
 }
 .btn:active{background:var(--line)}
 .btn-quiet{background:transparent;color:var(--muted)}
+/* The one button on the settings screen that can only ever help you, so it
+   should look unlike the ones that can take something away. */
+.btn-save{background:var(--yes);border-color:var(--yes);color:#08210f;width:100%;flex:none}
+.btn-save:active{background:#2fa36c}
+.btn-danger{border-color:var(--no);color:var(--no);background:transparent;width:100%;flex:none}
+.btn-danger:active{background:rgba(226,86,79,.15)}
+.btn-danger.armed{background:var(--no);color:#fff}
+
+/* ---------- settings ---------- */
+.field{display:block;margin-bottom:12px}
+.field > span{display:block;font-size:.78rem;font-weight:600;color:var(--muted);margin-bottom:5px}
+.field input{
+  width:100%;appearance:none;border:1px solid var(--line);background:var(--surface-2);
+  color:var(--text);font:inherit;padding:12px 14px;border-radius:var(--r);
+}
+/* Dashed and faded, so a field that cannot be typed into does not look like one
+   that can. The panel says why; this stops anyone tapping to find out. */
+.field input:disabled{opacity:.45;border-style:dashed}
+#acct-out .btn:disabled{opacity:.45;border-style:dashed}
+#acct-out .btn{width:100%;flex:none}
+#btn-signout{width:100%;flex:none;margin-top:4px}
+
+/* Everything that can take progress away lives behind this. */
+.care{border:1px solid var(--line);border-radius:var(--r);background:var(--surface)}
+.care > summary{
+  padding:16px;font-weight:620;cursor:pointer;list-style:none;color:var(--muted);
+  display:flex;align-items:center;gap:9px;
+}
+.care > summary::-webkit-details-marker{display:none}
+.care > summary::before{content:'\25B8';font-size:.9em;transition:transform .15s}
+.care[open] > summary::before{transform:rotate(90deg)}
+.care[open] > summary{color:var(--text);border-bottom:1px solid var(--line)}
+.care-body{padding:14px}
+.care-body .panel{background:var(--surface-2)}
+.care-body .btn + .btn{margin-top:8px}
+.plan #plan-summary{font-size:.92rem;margin-bottom:8px}
+.plan .warnbad{color:var(--no)}
+.plan ul{margin:0 0 12px;padding-left:20px;font-size:.84rem}
+.plan li{margin-bottom:3px}
 button:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
 /* ---------- tabs ---------- */
