@@ -86,8 +86,13 @@
 
       <div class="panel">
         <h2>Class account</h2>
-        <p class="muted" id="acct-note">Not switched on yet. These are the details you will sign in
-          with once the class dictionary is ready, so that clips you record carry your name.</p>
+        <label class="switch">
+          <span>Class features</span>
+          <input id="acct-on" type="checkbox">
+          <i aria-hidden="true"></i>
+        </label>
+        <p class="muted" id="acct-note">Off. Turn this on to sign in and share clips with the class.
+          Everything else in the app works the same either way.</p>
         <div id="acct-out">
           <label class="field"><span>Email</span>
             <input id="acct-email" type="email" autocomplete="username" inputmode="email"
@@ -175,5 +180,9 @@
 <div id="toast" class="toast" hidden></div>
 
 <script src="./app.js"></script>
+<!-- Class features. A module, so a failure to load or a throw inside it cannot
+     touch app.js above: search, practise and your deck carry on regardless.
+     It fetches nothing until the switch in Settings is turned on. -->
+<script type="module" src="./collab.js"></script>
 </body>
 </html>

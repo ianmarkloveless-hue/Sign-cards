@@ -9,7 +9,7 @@
   /* Shown in Settings, so it is possible to tell from the phone which build is
      running. Bump it when releasing, and tag the commit to match. The cache
      name in sw.js is a separate thing: that only tells the phone to refetch. */
-  var APP_VERSION = '1.4.1';
+  var APP_VERSION = '1.5';
 
   var FAV_KEY = 'signcards.favourites.v1';
   var SET_KEY = 'signcards.settings.v1';
@@ -1330,4 +1330,12 @@
       navigator.serviceWorker.register('./sw.js').catch(function () {});
     });
   }
+
+  /* The only thing collab.js is given. Deliberately small: the class features
+     are a guest here, not a partner, and the app must not come to depend on
+     anything they do. It grows only when a step actually needs it to. */
+  window.SignCards = {
+    version: APP_VERSION,
+    toast: toast
+  };
 })();

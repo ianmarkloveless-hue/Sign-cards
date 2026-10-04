@@ -77,6 +77,23 @@ a{color:var(--accent)}
 #acct-out .btn{width:100%;flex:none}
 #btn-signout{width:100%;flex:none;margin-top:4px}
 
+/* A plain checkbox wearing a switch. Native underneath, so it is keyboard
+   reachable and announced correctly without any script. */
+.switch{display:flex;align-items:center;gap:12px;cursor:pointer;margin-bottom:10px}
+.switch > span{flex:1;font-weight:600;font-size:.95rem}
+.switch input{position:absolute;opacity:0;width:0;height:0}
+.switch i{
+  flex:none;width:48px;height:29px;border-radius:999px;background:var(--surface-2);
+  border:1px solid var(--line);position:relative;transition:background .15s;
+}
+.switch i::after{
+  content:'';position:absolute;top:3px;left:3px;width:21px;height:21px;border-radius:50%;
+  background:var(--muted);transition:transform .15s,background .15s;
+}
+.switch input:checked + i{background:var(--yes);border-color:var(--yes)}
+.switch input:checked + i::after{transform:translateX(19px);background:#fff}
+.switch input:focus-visible + i{outline:2px solid var(--accent);outline-offset:2px}
+
 /* Everything that can take progress away lives behind this. */
 .care{border:1px solid var(--line);border-radius:var(--r);background:var(--surface)}
 .care > summary{
