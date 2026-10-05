@@ -593,3 +593,79 @@ function addTryButton() {
   el.in.insertBefore(b, el.signout);
 }
 
+/* ======================================================================
+   The class as a second dictionary source
+
+   Everything the class has published is held here as one index, cached on the
+   phone, and handed to app.js through window.SignCards.provider. app.js never
+   learns that Firebase exists: it asks for words and for a word's clips, and
+   coped before this file did anything at all.
+
+   The cache is read first and the network second, always. Nothing in the
+   dictionary ever waits on a request.
+
+   Step 2b fills this from Firestore. For now it serves whatever is cached,
+   which on a fresh phone is nothing.
+   ====================================================================== */
+
+const INDEX_KEY = 'signcards.class.v1';
+
+function readIndex() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(INDEX_KEY) || 'null');
+    if (!raw || typeof raw !== 'object') return blankIndex();
+    /* No prototype. Someone will eventually add a word called "constructor",
+       and on a plain object that key already holds a function. */
+    const entries = Object.create(null);
+    Object.keys(raw.entries || {}).forEach(function (k) { entries[k] = raw.entries[k]; });
+    return { since: raw.since || 0, entries: entries };
+  } catch (e) { return blankIndex(); }
+}
+
+function blankIndex() {
+  return { since: 0, entries: Object.create(null) };
+}
+
+function writeIndex(ix) {
+  try {
+    localStorage.setItem(INDEX_KEY, JSON.stringify({ since: ix.since, entries: ix.entries }));
+  } catch (e) { /* full or blocked; it will be refetched next time */ }
+}
+
+let index = readIndex();
+
+/* Only words the dictionary does not already carry become new entries in the
+   word list. A clip on an existing word needs no new word and no new category:
+   its slug is already in the dictionary, so it inherits what that word has. */
+function provider() {
+  return {
+    words: function () {
+      const out = [];
+      Object.keys(index.entries).forEach(function (slug) {
+        const e = index.entries[slug];
+        if (e && e.isNew) out.push([e.word, slug]);
+      });
+      out.sort(function (a, b) { return a[0].localeCompare(b[0]); });
+      return out;
+    },
+    entry: function (slug) {
+      const e = Object.prototype.hasOwnProperty.call(index.entries, slug)
+        ? index.entries[slug] : null;
+      if (!e || !e.videos || !e.videos.length) return null;
+      return { word: e.word, senses: [{ def: e.def || '', videos: e.videos }] };
+    }
+  };
+}
+
+if (window.SignCards) {
+  window.SignCards.provider = provider();
+  if (window.SignCards.classChanged) window.SignCards.classChanged();
+}
+
+/* Step 2b calls this after a sync. Kept here so the shape is settled before
+   anything fetches. */
+function setIndex(next) {
+  index = next;
+  writeIndex(index);
+  if (window.SignCards && window.SignCards.classChanged) window.SignCards.classChanged();
+}
