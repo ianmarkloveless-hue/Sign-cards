@@ -589,7 +589,7 @@ async function doPublish(blob, word) {
   rec.title.textContent = 'Publishing…';
   rec.hint.textContent = 'Sending ' + Math.round(blob.size / 1024) + ' KB. This takes a moment.';
   try {
-    const r = await publish(blob, rec.slug, word, rec.def);
+    const r = await publish(blob, rec.slug, word, rec.def, rec.isNew);
     rec.title.textContent = 'Published';
     rec.hint.textContent = '';
     rec.play.hidden = true;
@@ -611,10 +611,11 @@ async function doPublish(blob, word) {
   }
 }
 
-function openRecorder(word, slug, def) {
+function openRecorder(word, slug, def, isNew) {
   if (!build()) return;
   rec.slug = slug || '';
   rec.def = def || '';
+  rec.isNew = !!isNew;
   cameFrom = document.querySelector('#screens > .screen:not([hidden])');
   const all = document.querySelectorAll('#screens > .screen');
   for (let i = 0; i < all.length; i++) all[i].hidden = true;
@@ -635,7 +636,7 @@ function addTryButton() {
   b.style.width = '100%';
   b.style.marginBottom = '8px';
   b.textContent = 'Try the recorder';
-  b.addEventListener('click', function () { openRecorder('', '', ''); });
+  b.addEventListener('click', function () { openRecorder('', '', '', false); });
   el.in.insertBefore(b, el.signout);
 }
 
@@ -885,7 +886,7 @@ function addSyncRow() {
    pointing at a file that is not there would show everyone a broken clip,
    while a file nobody has a document for is invisible and harmless. */
 
-async function publish(blob, slug, word, def) {
+async function publish(blob, slug, word, def, isNew) {
   const f = await firebase();
   const user = f.auth.currentUser;
   if (!user) throw new Error('not signed in');
@@ -899,6 +900,18 @@ async function publish(blob, slug, word, def) {
   const ref = f.G.ref(f.storage, path);
   await f.G.uploadBytes(ref, blob, { contentType: mime });
   const url = await f.G.getDownloadURL(ref);
+
+  /* The word before the clip. The sync reads words first, so a clip arriving
+     with its word already there is understood in one pass rather than two. */
+  if (isNew) {
+    await f.S.setDoc(f.S.doc(f.db, 'words', slug), {
+      word: word,
+      def: def || '',
+      by: user.uid,
+      created: f.S.serverTimestamp(),
+      updated: f.S.serverTimestamp()
+    }, { merge: true });
+  }
 
   await f.S.setDoc(f.S.doc(f.db, 'clips', clipId), {
     slug: slug,
@@ -943,6 +956,168 @@ function recordButton(container, slug, word, def) {
 if (window.SignCards) {
   window.SignCards.onWordShown = function (container, slug, word, def) {
     recordButton(container, slug, word, def);
+  };
+}
+
+/* ---------------- adding a word the dictionary does not have ----------------
+
+   Search finds nothing, so offer to add it: confirm a definition, record a
+   clip, publish both. The word gets the User content category and nothing
+   else, until there is an index that can categorise it the way signbsl's were.
+
+   The definition comes from Wiktionary, which was chosen by testing rather
+   than by reputation. dictionaryapi.dev, which was the first choice, answered
+   with HTTP 522 twice, recovered, then hung past 45 seconds on five words -
+   intermittent, which is worse to build on than simply being down. Wiktionary
+   answered every word in 0.5 to 0.9 seconds with access-control-allow-origin
+   set, and 404s cleanly on a word it does not know.
+
+   Nothing here blocks on it. If Wiktionary is slow, unreachable, or has never
+   heard of the word, you get an empty box and a quiet note, and adding the
+   word carries on. A dictionary being down is not a reason to stop someone
+   recording a sign. */
+
+const WIKT = 'https://en.wiktionary.org/api/rest_v1/page/definition/';
+
+function slugify(word) {
+  return String(word).toLowerCase().trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function stripTags(html) {
+  const d = document.createElement('div');
+  d.innerHTML = html || '';
+  return (d.textContent || '').replace(/\s+/g, ' ').trim();
+}
+
+/* The first definition that actually says something. Wiktionary's first entry
+   is often an empty string carrying only a usage label. */
+async function lookUp(word) {
+  try {
+    const r = await fetch(WIKT + encodeURIComponent(word.toLowerCase().replace(/ /g, '_')));
+    if (r.status === 404) return { state: 'unknown' };
+    if (!r.ok) return { state: 'failed' };
+    const d = await r.json();
+    const en = d.en || [];
+    for (const part of en) {
+      for (const def of (part.definitions || [])) {
+        const t = stripTags(def.definition);
+        if (t) return { state: 'found', def: t, pos: part.partOfSpeech || '' };
+      }
+    }
+    return { state: 'unknown' };
+  } catch (e) { return { state: 'failed' }; }
+}
+
+/* ---------------- the screen ---------------- */
+
+let addScreen = null;
+
+function buildAdd() {
+  if (addScreen) return addScreen;
+  const screens = document.getElementById('screens');
+  if (!screens) return null;
+  styleOnce();
+
+  const sec = document.createElement('section');
+  sec.id = 'screen-addword';
+  sec.className = 'screen';
+  sec.hidden = true;
+  sec.innerHTML =
+    '<header class="rec-head"><h2 id="aw-title">Add a word</h2>' +
+      '<p class="muted" id="aw-hint"></p></header>' +
+    '<label class="field"><span>Definition</span>' +
+      '<textarea id="aw-def" rows="3"></textarea></label>' +
+    '<p class="muted" id="aw-source"></p>' +
+    '<div class="rec-btns" id="aw-btns"></div>';
+  screens.appendChild(sec);
+
+  addScreen = {
+    sec: sec,
+    title: sec.querySelector('#aw-title'), hint: sec.querySelector('#aw-hint'),
+    def: sec.querySelector('#aw-def'), source: sec.querySelector('#aw-source'),
+    btns: sec.querySelector('#aw-btns')
+  };
+  return addScreen;
+}
+
+function addButtons(list) {
+  addScreen.btns.innerHTML = '';
+  list.forEach(function (item) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = item[0];
+    if (item[1]) b.className = item[1];
+    b.addEventListener('click', item[2]);
+    addScreen.btns.appendChild(b);
+  });
+}
+
+function closeAdd() {
+  addScreen.sec.hidden = true;
+  document.body.classList.remove('is-recording');
+  if (cameFrom) { cameFrom.hidden = false; cameFrom = null; }
+  window.scrollTo(0, 0);
+}
+
+async function openAddWord(word) {
+  if (!buildAdd()) return;
+  const slug = slugify(word);
+  if (!slug) return;
+
+  cameFrom = document.querySelector('#screens > .screen:not([hidden])');
+  const all = document.querySelectorAll('#screens > .screen');
+  for (let i = 0; i < all.length; i++) all[i].hidden = true;
+  addScreen.sec.hidden = false;
+  document.body.classList.add('is-recording');
+  window.scrollTo(0, 0);
+
+  addScreen.title.textContent = 'Add “' + word + '”';
+  addScreen.hint.textContent = 'It will be filed under User content, and everyone in the class '
+    + 'will be able to find it.';
+  addScreen.def.value = '';
+  addScreen.source.textContent = 'Looking for a definition…';
+  addButtons([['Cancel', 'quiet', closeAdd]]);
+
+  const found = await lookUp(word);
+  addScreen.source.textContent =
+    found.state === 'found' ? 'From Wiktionary' + (found.pos ? ' (' + found.pos.toLowerCase() + ')' : '')
+      + ' — change it if it is not the right sense.'
+    : found.state === 'unknown' ? 'Wiktionary has never heard of it. Write your own, or leave it empty.'
+    : 'Could not reach Wiktionary. Write your own, or leave it empty.';
+  if (found.state === 'found') addScreen.def.value = found.def;
+
+  addButtons([
+    ['Record it', 'go', function () {
+      const def = addScreen.def.value.trim();
+      closeAdd();
+      openRecorder(word, slug, def, true);
+    }],
+    ['Cancel', 'quiet', closeAdd]
+  ]);
+}
+
+/* ---------------- the way in, when a search finds nothing ---------------- */
+
+if (window.SignCards) {
+  window.SignCards.onNoMatch = function (box, query) {
+    if (!state.enabled) return;
+    if (!fb || !fb.auth || !fb.auth.currentUser) return;
+    const word = query.trim();
+    if (!word || word.length < 2) return;
+
+    const slug = slugify(word);
+    /* A word the dictionary has but search did not surface is not a new word.
+       Adding it again would list it twice. */
+    if (!slug || (window.SignCards.hasWord && window.SignCards.hasWord(slug))) return;
+
+    const b = document.createElement('button');
+    b.className = 'btn rec-offer';
+    b.type = 'button';
+    b.textContent = 'Add “' + word + '” and record it';
+    b.addEventListener('click', function () { openAddWord(word); });
+    box.appendChild(b);
   };
 }
 
