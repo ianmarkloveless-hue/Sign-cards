@@ -9,7 +9,7 @@
   /* Shown in Settings, so it is possible to tell from the phone which build is
      running. Bump it when releasing, and tag the commit to match. The cache
      name in sw.js is a separate thing: that only tells the phone to refetch. */
-  var APP_VERSION = '1.6.1';
+  var APP_VERSION = '1.7';
 
   var FAV_KEY = 'signcards.favourites.v1';
   var SET_KEY = 'signcards.settings.v1';
@@ -329,6 +329,15 @@
       });
       container.appendChild(sec);
     });
+
+    /* The class features get to add to the end of a word - an offer to record
+       your own. Wrapped, because a throw in there must not leave the word
+       half drawn, and logged rather than swallowed: an empty catch once hid a
+       bug that emptied both category dropdowns. */
+    try {
+      var hook = window.SignCards && window.SignCards.onWordShown;
+      if (hook) hook(container, slug, word, (entry.senses[0] || {}).def || '');
+    } catch (e) { console.error('class hook:', e); }
   }
 
   function openWord(slug, word) {
@@ -1428,6 +1437,20 @@
        learns where any of it comes from, and asks for it defensively, so an
        absent or broken provider leaves the dictionary exactly as it was. */
     provider: null,
+
+    /* collab.js sets this to add its own button to the end of a word view. */
+    onWordShown: null,
+
+    /* Put a clip in the deck. Same shape as starring one by hand, so a
+       published clip is an ordinary card from the moment it exists. */
+    addCard: function (slug, word, vid, def) {
+      var id = slug + '#' + (vid.id || vid.u);
+      if (!favs[id]) {
+        favs[id] = newCard(id, word, slug, vid, def || '');
+        saveFavs();
+      }
+      return id;
+    },
 
     /* Called after a sync. Rebuilds the merged word list and redraws whatever
        is on screen, so new words appear without anyone reloading. */

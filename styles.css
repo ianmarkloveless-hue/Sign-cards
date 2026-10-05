@@ -347,3 +347,7 @@ button:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(-
   .toast{animation:pop .22s ease-out}
   @keyframes pop{from{opacity:0;transform:translate(-50%,8px)}to{opacity:1;transform:translate(-50%,0)}}
 }
+
+/* The class's offer at the end of a word. Full width, below the clips, so it
+   reads as "and you could add one" rather than competing with them. */
+.rec-offer{width:100%;flex:none;margin-top:4px}
