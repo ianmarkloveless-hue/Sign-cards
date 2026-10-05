@@ -9,7 +9,7 @@
   /* Shown in Settings, so it is possible to tell from the phone which build is
      running. Bump it when releasing, and tag the commit to match. The cache
      name in sw.js is a separate thing: that only tells the phone to refetch. */
-  var APP_VERSION = '1.9.1';
+  var APP_VERSION = '1.9.2';
 
   var FAV_KEY = 'signcards.favourites.v1';
   var SET_KEY = 'signcards.settings.v1';
@@ -255,12 +255,24 @@
 
     if (q.length < 1) { box.innerHTML = emptySearch(); return; }
 
+    /* The same query written as a slug, so that what is typed can be matched
+       against how a word is filed as well as how it is spelt. 737 of the 19,179
+       words are filed under something other than their spelling, and none of
+       them could be found by typing that: "nonverbal" is filed at non-verbal,
+       "acorn" at acorns, "Adam" at a-d-a-m. Searching the slug as well costs
+       two string comparisons a word and reaches all of them. */
+    var qs = q.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+
     loadWords().then(function (list) {
       var starts = [], contains = [];
       for (var i = 0; i < list.length && starts.length + contains.length < 400; i++) {
         var w = list[i][0].toLowerCase();
+        var sl = list[i][1];
+        /* else-if throughout, so a word matching both ways is still listed once. */
         if (w === q || w.indexOf(q) === 0) starts.push(list[i]);
+        else if (qs && (sl === qs || sl.indexOf(qs) === 0)) starts.push(list[i]);
         else if (w.indexOf(q) > -1) contains.push(list[i]);
+        else if (qs && sl.indexOf(qs) > -1) contains.push(list[i]);
       }
       starts.sort(function (a, b) { return a[0].length - b[0].length; });
       var hits = starts.concat(contains).slice(0, 60);
