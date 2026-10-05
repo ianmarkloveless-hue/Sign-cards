@@ -9,7 +9,7 @@
   /* Shown in Settings, so it is possible to tell from the phone which build is
      running. Bump it when releasing, and tag the commit to match. The cache
      name in sw.js is a separate thing: that only tells the phone to refetch. */
-  var APP_VERSION = '1.7';
+  var APP_VERSION = '1.8';
 
   var FAV_KEY = 'signcards.favourites.v1';
   var SET_KEY = 'signcards.settings.v1';
@@ -268,6 +268,11 @@
       if (!hits.length) {
         box.innerHTML = '<p class="hint">No match for &ldquo;' + esc(raw.trim()) + '&rdquo;. ' +
           'Try a shorter word, or look it up on <a href="https://www.signbsl.com/" target="_blank" rel="noopener">signbsl.com</a>.</p>';
+        /* The class features get to offer adding it. Logged, not swallowed. */
+        try {
+          var none = window.SignCards && window.SignCards.onNoMatch;
+          if (none) none(box, raw.trim());
+        } catch (e) { console.error('class hook:', e); }
         return;
       }
 
@@ -1440,6 +1445,24 @@
 
     /* collab.js sets this to add its own button to the end of a word view. */
     onWordShown: null,
+
+    /* And this when a search comes back with nothing, to offer adding it. */
+    onNoMatch: null,
+
+    /* Does the dictionary already carry this slug? Asked before anything is
+       published as a new word, so a word that merely has no video yet is never
+       added a second time. */
+    hasWord: function (slug) {
+      if (!baseWords) return false;
+      if (!baseSlugs) {
+        baseSlugs = Object.create(null);
+        for (var i = 0; i < baseWords.length; i++) baseSlugs[baseWords[i][1]] = true;
+      }
+      return Object.prototype.hasOwnProperty.call(baseSlugs, slug);
+    },
+
+    /* Show a word, so a newly published one can be opened straight away. */
+    showWord: function (slug, word) { openWord(slug, word); },
 
     /* Put a clip in the deck. Same shape as starring one by hand, so a
        published clip is an ordinary card from the moment it exists. */

@@ -351,3 +351,7 @@ button:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(-
 /* The class's offer at the end of a word. Full width, below the clips, so it
    reads as "and you could add one" rather than competing with them. */
 .rec-offer{width:100%;flex:none;margin-top:4px}
+.field textarea{
+  width:100%;appearance:none;border:1px solid var(--line);background:var(--surface-2);
+  color:var(--text);font:inherit;padding:12px 14px;border-radius:var(--r);resize:vertical;
+}
