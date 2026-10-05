@@ -9,7 +9,7 @@
   /* Shown in Settings, so it is possible to tell from the phone which build is
      running. Bump it when releasing, and tag the commit to match. The cache
      name in sw.js is a separate thing: that only tells the phone to refetch. */
-  var APP_VERSION = '1.6';
+  var APP_VERSION = '1.6.1';
 
   var FAV_KEY = 'signcards.favourites.v1';
   var SET_KEY = 'signcards.settings.v1';
