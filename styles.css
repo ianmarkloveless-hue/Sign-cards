@@ -335,6 +335,13 @@ button:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(-
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px}
 .credit{color:var(--muted);font-size:.78rem;line-height:1.6;padding:6px 2px 0;max-width:38em}
 
+/* The Readme. Long-form prose, so it gets the line height the rest of the
+   settings panels do not need, and the numbers sit outside the text block so
+   the two points read as two points. */
+.readme p{margin:0 0 10px;font-size:.9rem;line-height:1.6}
+.readme ol{margin:0;padding-left:22px;display:grid;gap:12px}
+.readme li{font-size:.9rem;line-height:1.6}
+
 /* ---------- toast ---------- */
 .toast{
   position:fixed;left:50%;transform:translateX(-50%);
