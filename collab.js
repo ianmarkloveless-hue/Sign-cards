@@ -233,7 +233,7 @@ if (ready) {
    ====================================================================== */
 
 const OUT = [640, 480];
-const SECS = 3;
+const SECS = 4;
 const ASK = 500000;
 const TYPES = ['video/mp4', 'video/mp4;codecs=avc1', 'video/webm'];
 

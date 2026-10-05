@@ -9,7 +9,7 @@
   /* Shown in Settings, so it is possible to tell from the phone which build is
      running. Bump it when releasing, and tag the commit to match. The cache
      name in sw.js is a separate thing: that only tells the phone to refetch. */
-  var APP_VERSION = '1.10.0';
+  var APP_VERSION = '1.11.0';
 
   var FAV_KEY = 'signcards.favourites.v1';
   var SET_KEY = 'signcards.settings.v1';
@@ -122,26 +122,60 @@
        the cost of believing it is the same word listed twice. */
     if (!baseSlugs) {
       baseSlugs = Object.create(null);     // "constructor" is a real headword
-      for (var j = 0; j < baseWords.length; j++) baseSlugs[baseWords[j][1]] = true;
+      /* slug -> position, not slug -> true. A clip recorded on a word the
+         dictionary already has is tagged at the position that word already
+         occupies, so the position is the thing worth keeping. Position 0 is
+         real and falsy, so every lookup goes through hasOwnProperty. */
+      for (var j = 0; j < baseWords.length; j++) baseSlugs[baseWords[j][1]] = j;
     }
-    var extra = classPairs().filter(function (pair) {
+    var pairs = classPairs();
+    var extra = pairs.filter(function (pair) {
       return !Object.prototype.hasOwnProperty.call(baseSlugs, pair[1]);
     });
     words = extra.length ? baseWords.concat(extra) : baseWords;
     slugCats = null;                       // the slug map is built from indices
-    classCategory(extra.length);
+    classCategory(pairs, extra.length);
   }
 
   /* One synthetic category covering everything the class has added, so it can
      be practised as a group as well as by topic. Rebuilt rather than appended
-     to, so repeated syncs cannot leave duplicates behind. */
-  function classCategory(n) {
+     to, so repeated syncs cannot leave duplicates behind.
+
+     It covers every word the class has published a clip for, not only the
+     words the dictionary did not already have. A clip recorded on "apple"
+     leaves apple in Food and adds it here too - an additional tag, which is
+     what was asked for. Tagging only the brand new words meant eight clips
+     showed up as one, because seven of them were on words that already
+     existed and so had no new position to point at. */
+  function classCategory(pairs, n) {
     if (!cats) return;
     cats.groups = (cats.groups || []).filter(function (g) { return g.id !== 'class'; });
     cats.categories = (cats.categories || []).filter(function (c) { return c.id !== 'c-user'; });
-    if (!n) return;
-    var idx = [];
-    for (var i = baseWords.length; i < baseWords.length + n; i++) idx.push(i);
+    if (!pairs.length) return;
+
+    var seen = Object.create(null), idx = [], i, at;
+    /* Words the dictionary already had, at the position they already occupy. */
+    for (i = 0; i < pairs.length; i++) {
+      at = Object.prototype.hasOwnProperty.call(baseSlugs, pairs[i][1])
+        ? baseSlugs[pairs[i][1]] : -1;
+      if (at < 0 || Object.prototype.hasOwnProperty.call(seen, at)) continue;
+      seen[at] = true;
+      idx.push(at);
+    }
+    /* And the genuinely new ones, appended on the end by rebuildWords. */
+    for (i = 0; i < n; i++) {
+      at = baseWords.length + i;
+      if (Object.prototype.hasOwnProperty.call(seen, at)) continue;
+      seen[at] = true;
+      idx.push(at);
+    }
+    if (!idx.length) return;
+
+    /* Ascending, because Explore browses a category by walking idx in order
+       and the dictionary is already in A-Z order by position. Publish order
+       would have made this the one category that browses at random. */
+    idx.sort(function (a, b) { return a - b; });
+
     cats.groups.unshift({ id: 'class', name: 'The class' });
     cats.categories.push({ id: 'c-user', name: 'User content', group: 'class', idx: idx });
   }
@@ -1520,7 +1554,9 @@
       if (!baseWords) return false;
       if (!baseSlugs) {
         baseSlugs = Object.create(null);
-        for (var i = 0; i < baseWords.length; i++) baseSlugs[baseWords[i][1]] = true;
+        /* Positions, matching rebuildWords. Whichever of the two runs first
+           builds the map the other then reads, so they have to agree. */
+        for (var i = 0; i < baseWords.length; i++) baseSlugs[baseWords[i][1]] = i;
       }
       return Object.prototype.hasOwnProperty.call(baseSlugs, slug);
     },
@@ -1548,6 +1584,14 @@
        is on screen, so new words appear without anyone reloading. */
     classChanged: function () {
       rebuildWords();
+      /* Explore fills its category list only when the list is empty, so that
+         coming back to the tab does not throw away where you were. That guard
+         also meant a category could never change once the tab had been opened:
+         publish a clip and User content kept whatever count it had when the
+         app started. Emptying it here is the one case where the list really is
+         out of date, and openExplore below fills it again. */
+      var ecat = $('#explore-cat');
+      if (ecat) ecat.innerHTML = '';
       var open = document.querySelector('#screens > .screen:not([hidden])');
       var id = open && open.id;
       if (id === 'screen-deck') openDeck();
