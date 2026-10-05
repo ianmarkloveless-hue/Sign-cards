@@ -87,13 +87,15 @@ function paint(user, msg) {
 
 async function firebase() {
   if (fb) return fb;
-  const [app, auth, store] = await Promise.all([
+  const [app, auth, store, bucket] = await Promise.all([
     import(SDK + 'firebase-app.js'),
     import(SDK + 'firebase-auth.js'),
-    import(SDK + 'firebase-firestore.js')
+    import(SDK + 'firebase-firestore.js'),
+    import(SDK + 'firebase-storage.js')
   ]);
   const a = app.initializeApp(CFG);
-  fb = { auth: auth.getAuth(a), db: store.getFirestore(a), A: auth, S: store };
+  fb = { auth: auth.getAuth(a), db: store.getFirestore(a), storage: bucket.getStorage(a),
+         A: auth, S: store, G: bucket };
 
   /* One listener, for the rest of this page's life: it fires on sign-in, on
      sign-out, and on a session restored from a previous visit. */
@@ -512,17 +514,24 @@ function review(blob, word) {
 
   /* A dictionary clip paints its first frame through the #t fragment on the
      URL. A blob cannot carry one - iOS rejects the whole source - so nothing
-     is painted until something decodes a frame. Nudging currentTime forces one
-     to be drawn whether it plays or not. */
-  v.addEventListener('loadeddata', function () {
-    if (v.paused) { try { v.currentTime = 0.05; } catch (e) { /* ignore */ } }
-  });
+     is painted until something decodes a frame. Nudging currentTime forces one.
 
-  /* makeVideo swallows the outcome of play(). Ask again and keep the answer. */
-  v.play().then(
-    function () { auto = 'playing'; facts(); },
-    function (err) { auto = 'autoplay refused (' + (err && err.name) + ')'; facts(); }
-  );
+     Only ever AFTER play() has settled, never alongside it: seeking a video
+     with a play() still pending aborts it, which turned a clip that was about
+     to play into "autoplay refused (AbortError)". The nudge was racing the
+     thing it exists to back up. */
+  function paintFrame() {
+    if (v.paused) { try { v.currentTime = 0.05; } catch (e) { /* ignore */ } }
+  }
+
+  /* makeVideo already attempts autoplay. Calling play() a second time races
+     it, and the loser rejects with AbortError - which reads as a refusal when
+     nothing was refused at all. So: do not ask again. Watch instead. */
+  v.addEventListener('play', function () { auto = 'playing'; facts(); });
+  setTimeout(function () {
+    if (v.paused) { auto = 'not playing'; paintFrame(); }
+    facts();
+  }, 1200);
 
   rec.title.textContent = 'How does that look?';
   rec.hint.textContent = 'It should play on a loop — tap the picture if it does not. '
@@ -554,23 +563,58 @@ function review(blob, word) {
   v.addEventListener('error', facts);
   if (v.readyState >= 1) facts();
 
+  const canPublish = !!(rec.slug && fb && fb.auth && fb.auth.currentUser);
+
   buttons([
-    ['Keep it', 'keep', function () {
-      rec.hint.textContent = '';
-      rec.title.textContent = 'Kept — for now';
-      rec.play.hidden = true;
-      rec.facts.innerHTML = 'That clip is <b>' + Math.round(blob.size / 1024) + ' KB</b>. '
-        + 'Nothing has been uploaded or saved: publishing comes next.';
-      rec.facts.hidden = false;
-      buttons([['Done', 'go', closeRecorder]]);
+    [canPublish ? 'Publish it to the class' : 'Keep it', 'keep', function () {
+      if (!canPublish) {
+        rec.hint.textContent = '';
+        rec.title.textContent = 'Kept — for now';
+        rec.play.hidden = true;
+        rec.facts.innerHTML = 'That clip is <b>' + Math.round(blob.size / 1024) + ' KB</b>. '
+          + 'Nothing has been uploaded: open the recorder from a word to publish one.';
+        rec.facts.hidden = false;
+        buttons([['Done', 'go', closeRecorder]]);
+        return;
+      }
+      doPublish(blob, word);
     }],
     ['Record it again', '', function () { intro(word); }],
     ['Throw it away', 'quiet', closeRecorder]
   ]);
 }
 
-function openRecorder(word) {
+async function doPublish(blob, word) {
+  buttons([]);
+  rec.title.textContent = 'Publishing…';
+  rec.hint.textContent = 'Sending ' + Math.round(blob.size / 1024) + ' KB. This takes a moment.';
+  try {
+    const r = await publish(blob, rec.slug, word, rec.def);
+    rec.title.textContent = 'Published';
+    rec.hint.textContent = '';
+    rec.play.hidden = true;
+    rec.facts.innerHTML = '<b>' + Math.round(r.bytes / 1024) + ' KB</b> sent. '
+      + 'It is in your deck, and the rest of the class will see it next time they look.';
+    rec.facts.hidden = false;
+    toast('Published');
+    buttons([['Done', 'go', closeRecorder]]);
+  } catch (e) {
+    /* The clip is still in hand - nothing has been thrown away. */
+    rec.title.textContent = 'Could not publish';
+    rec.hint.textContent = 'Nothing was lost. ' + ((e && e.code) || (e && e.message) || 'Unknown error')
+      + '. You can try again.';
+    buttons([
+      ['Try publishing again', 'keep', function () { doPublish(blob, word); }],
+      ['Record it again', '', function () { intro(word); }],
+      ['Throw it away', 'quiet', closeRecorder]
+    ]);
+  }
+}
+
+function openRecorder(word, slug, def) {
   if (!build()) return;
+  rec.slug = slug || '';
+  rec.def = def || '';
   cameFrom = document.querySelector('#screens > .screen:not([hidden])');
   const all = document.querySelectorAll('#screens > .screen');
   for (let i = 0; i < all.length; i++) all[i].hidden = true;
@@ -591,7 +635,7 @@ function addTryButton() {
   b.style.width = '100%';
   b.style.marginBottom = '8px';
   b.textContent = 'Try the recorder';
-  b.addEventListener('click', function () { openRecorder(''); });
+  b.addEventListener('click', function () { openRecorder('', '', ''); });
   el.in.insertBefore(b, el.signout);
 }
 
@@ -831,4 +875,74 @@ function addSyncRow() {
   saySync();
 }
 
+/* ---------------- publishing ----------------
+
+   Record, upload, write the document, put it in your own deck. The clip then
+   comes back down through the ordinary sync, so what everyone else sees and
+   what you see are the same thing arriving by the same route.
+
+   Order matters. The file goes up first and the document second: a document
+   pointing at a file that is not there would show everyone a broken clip,
+   while a file nobody has a document for is invisible and harmless. */
+
+async function publish(blob, slug, word, def) {
+  const f = await firebase();
+  const user = f.auth.currentUser;
+  if (!user) throw new Error('not signed in');
+
+  /* An id generated before anything is written, so the file and its document
+     share one and either can be found from the other. */
+  const clipId = f.S.doc(f.S.collection(f.db, 'clips')).id;
+  const mime = blob.type || 'video/mp4';
+  const path = 'clips/' + user.uid + '/' + clipId + '.mp4';
+
+  const ref = f.G.ref(f.storage, path);
+  await f.G.uploadBytes(ref, blob, { contentType: mime });
+  const url = await f.G.getDownloadURL(ref);
+
+  await f.S.setDoc(f.S.doc(f.db, 'clips', clipId), {
+    slug: slug,
+    word: word,
+    url: url,
+    path: path,
+    mime: mime,
+    bytes: blob.size,
+    by: user.uid,
+    byName: state.name || user.email,
+    status: 'live',
+    created: f.S.serverTimestamp(),
+    updated: f.S.serverTimestamp()
+  });
+
+  /* Yours straight away, rather than waiting for it to come back round. */
+  const vid = { id: clipId, u: url, label: '', credit: state.name || user.email };
+  if (window.SignCards && window.SignCards.addCard) {
+    window.SignCards.addCard(slug, word, vid, def);
+  }
+
+  /* And then fetched like anyone else's, which is also what proves it landed. */
+  await sync(false);
+  return { clipId: clipId, url: url, bytes: blob.size };
+}
+
+/* ---------------- the way in, on a word ---------------- */
+
+function recordButton(container, slug, word, def) {
+  if (!state.enabled) return;
+  const f = fb;
+  if (!f || !f.auth || !f.auth.currentUser) return;   // signed out: no offer
+
+  const b = document.createElement('button');
+  b.className = 'btn rec-offer';
+  b.type = 'button';
+  b.textContent = 'Record your own “' + word + '”';
+  b.addEventListener('click', function () { openRecorder(word, slug, def); });
+  container.appendChild(b);
+}
+
+if (window.SignCards) {
+  window.SignCards.onWordShown = function (container, slug, word, def) {
+    recordButton(container, slug, word, def);
+  };
+}
 
