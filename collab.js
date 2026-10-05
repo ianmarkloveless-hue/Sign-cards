@@ -71,7 +71,6 @@ function paint(user, msg) {
   [el.email, el.pass, el.name, el.signin].forEach((n) => { n.disabled = !on || busy; });
 
   if (user) {
-    addTryButton();
     addSyncRow();
     el.who.textContent = 'Signed in as ' + (state.name || user.email) + '.';
     el.note.textContent = msg || 'Clips you record will carry your name.';
@@ -641,20 +640,9 @@ function openRecorder(word, slug, def, isNew) {
   intro(word || '');
 }
 
-/* A temporary way in, while there is nowhere else for it to live. It shows
-   only when signed in, and goes when the word view gains its own. */
-function addTryButton() {
-  if (!ready || document.getElementById('btn-try-rec')) return;
-  const b = document.createElement('button');
-  b.id = 'btn-try-rec';
-  b.type = 'button';
-  b.className = 'btn';
-  b.style.width = '100%';
-  b.style.marginBottom = '8px';
-  b.textContent = 'Try the recorder';
-  b.addEventListener('click', function () { openRecorder('', '', '', false); });
-  el.in.insertBefore(b, el.signout);
-}
+/* The recorder used to be offered here, as a way in while there was nowhere
+   else for it to live. The word view has its own "Record your own" button now,
+   which starts from a word rather than from nothing, so this has gone. */
 
 /* ======================================================================
    The class as a second dictionary source
