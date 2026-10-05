@@ -9,7 +9,7 @@
   /* Shown in Settings, so it is possible to tell from the phone which build is
      running. Bump it when releasing, and tag the commit to match. The cache
      name in sw.js is a separate thing: that only tells the phone to refetch. */
-  var APP_VERSION = '1.5.5';
+  var APP_VERSION = '1.6';
 
   var FAV_KEY = 'signcards.favourites.v1';
   var SET_KEY = 'signcards.settings.v1';
@@ -39,7 +39,9 @@
   var REST = 60;             // days a top-box card rests
   var DAMP = 30;             // how far its weight is cut while resting
 
-  var words = null;          // [[word, slug], ...]
+  var baseWords = null;      // the dictionary's own [[word, slug], ...]
+  var baseSlugs = null;      // its slugs, for telling a new word from a known one
+  var words = null;          // baseWords, then whatever the class has added
   var shards = {};           // letter -> {slug: entry}
   var favs = load(FAV_KEY, {});
   var settings = load(SET_KEY, { mode: 'productive', starterLoaded: false });
@@ -96,7 +98,52 @@
     if (words) return Promise.resolve(words);
     return fetch('./data/words.json')
       .then(function (r) { if (!r.ok) throw new Error('missing'); return r.json(); })
-      .then(function (d) { words = d.words || []; return words; });
+      .then(function (d) { baseWords = d.words || []; rebuildWords(); return words; });
+  }
+
+  /* Whatever the class has published, asked for defensively. If collab.js is
+     absent, broken, or mid-sync, this is an empty list and everything below
+     behaves as it did before any of it existed. */
+  function classPairs() {
+    try {
+      var p = window.SignCards && window.SignCards.provider;
+      var list = p && p.words && p.words();
+      return (list && list.length) ? list : [];
+    } catch (e) { return []; }
+  }
+
+  /* Class words go on the END. categories.json holds indices into this list,
+     so the 19,179 dictionary positions have to keep the numbers they were
+     given when the categories were built. */
+  function rebuildWords() {
+    if (!baseWords) return;
+    /* Whether a word is new is decided HERE, against the dictionary, not taken
+       on trust from the index. A publisher's phone can be wrong about it, and
+       the cost of believing it is the same word listed twice. */
+    if (!baseSlugs) {
+      baseSlugs = Object.create(null);     // "constructor" is a real headword
+      for (var j = 0; j < baseWords.length; j++) baseSlugs[baseWords[j][1]] = true;
+    }
+    var extra = classPairs().filter(function (pair) {
+      return !Object.prototype.hasOwnProperty.call(baseSlugs, pair[1]);
+    });
+    words = extra.length ? baseWords.concat(extra) : baseWords;
+    slugCats = null;                       // the slug map is built from indices
+    classCategory(extra.length);
+  }
+
+  /* One synthetic category covering everything the class has added, so it can
+     be practised as a group as well as by topic. Rebuilt rather than appended
+     to, so repeated syncs cannot leave duplicates behind. */
+  function classCategory(n) {
+    if (!cats) return;
+    cats.groups = (cats.groups || []).filter(function (g) { return g.id !== 'class'; });
+    cats.categories = (cats.categories || []).filter(function (c) { return c.id !== 'c-user'; });
+    if (!n) return;
+    var idx = [];
+    for (var i = baseWords.length; i < baseWords.length + n; i++) idx.push(i);
+    cats.groups.unshift({ id: 'class', name: 'The class' });
+    cats.categories.push({ id: 'c-user', name: 'User content', group: 'class', idx: idx });
   }
 
   function loadShard(letter) {
@@ -110,8 +157,39 @@
     return loadShard(letterOf(slug)).then(function (s) {
       /* hasOwnProperty, not s[slug]: "constructor" is a real headword and would
          otherwise match the one inherited from Object.prototype. */
-      return Object.prototype.hasOwnProperty.call(s, slug) ? s[slug] : null;
+      var base = Object.prototype.hasOwnProperty.call(s, slug) ? s[slug] : null;
+      return mergeClass(slug, base);
+    }).catch(function () {
+      /* A word the class added has no shard to come from. */
+      var only = classEntry(slug);
+      if (only) return only;
+      throw new Error('missing');
     });
+  }
+
+  function classEntry(slug) {
+    try {
+      var p = window.SignCards && window.SignCards.provider;
+      return (p && p.entry && p.entry(slug)) || null;
+    } catch (e) { return null; }
+  }
+
+  /* The class's clips go above signbsl's on the word page: they are the ones
+     someone in the room chose to record. */
+  function mergeClass(slug, base) {
+    var extra = classEntry(slug);
+    if (!extra) return base;
+    if (!base) return extra;
+    var senses = (base.senses || []).slice();
+    var mine = (extra.senses && extra.senses[0]) || null;
+    if (!mine || !mine.videos || !mine.videos.length) return base;
+    if (!senses.length) return { word: base.word, senses: [mine] };
+    var first = senses[0];
+    senses[0] = {
+      def: first.def,
+      videos: mine.videos.concat(first.videos || [])
+    };
+    return { word: base.word, senses: senses };
   }
 
   /* ---------------- deck marks ---------------- */
@@ -394,7 +472,7 @@
     if (cats) return Promise.resolve(cats);
     return fetch('./data/categories.json')
       .then(function (r) { if (!r.ok) throw new Error('missing'); return r.json(); })
-      .then(function (d) { cats = d; return d; });
+      .then(function (d) { cats = d; rebuildWords(); return d; });
   }
 
   function catById(id) {
@@ -1345,6 +1423,23 @@
   window.SignCards = {
     version: APP_VERSION,
     toast: toast,
+
+    /* collab.js puts a provider here: { words(), entry(slug) }. app.js never
+       learns where any of it comes from, and asks for it defensively, so an
+       absent or broken provider leaves the dictionary exactly as it was. */
+    provider: null,
+
+    /* Called after a sync. Rebuilds the merged word list and redraws whatever
+       is on screen, so new words appear without anyone reloading. */
+    classChanged: function () {
+      rebuildWords();
+      var open = document.querySelector('#screens > .screen:not([hidden])');
+      var id = open && open.id;
+      if (id === 'screen-deck') openDeck();
+      else if (id === 'screen-explore') openExplore();
+      else if (id === 'screen-practise') openPractise();
+      else if (id === 'screen-search' && $('#q').value.trim()) runSearch($('#q').value);
+    },
     /* Lent out so a recorded clip is played back by the same component as
        every other clip in the app: a painted first frame rather than a black
        box, muted so iOS will play it inline, and the app's own tap control
