@@ -9,7 +9,7 @@
   /* Shown in Settings, so it is possible to tell from the phone which build is
      running. Bump it when releasing, and tag the commit to match. The cache
      name in sw.js is a separate thing: that only tells the phone to refetch. */
-  var APP_VERSION = '1.8.1';
+  var APP_VERSION = '1.9';
 
   var FAV_KEY = 'signcards.favourites.v1';
   var SET_KEY = 'signcards.settings.v1';
@@ -944,6 +944,15 @@
       if (!(L in firstRow)) firstRow[L] = row;
 
       list.appendChild(row);
+
+      /* The class features get to say something about a card - that the clip
+         behind it has been withdrawn, say. AFTER it is in the list, not
+         before: a note placed beside a row with no parent goes nowhere, and
+         does it silently. Logged, not swallowed. */
+      try {
+        var dh = window.SignCards && window.SignCards.onDeckRow;
+        if (dh) dh(row, c);
+      } catch (e) { console.error('class hook:', e); }
     });
 
     /* Measured with the strip's padding off, so the answer does not depend on
@@ -1448,6 +1457,49 @@
 
     /* And this when a search comes back with nothing, to offer adding it. */
     onNoMatch: null,
+
+    /* And this for each row of the deck, as it is drawn. */
+    onDeckRow: null,
+
+    /* Every clip a word has, dictionary and class together, so another one can
+       be offered when the one in a card goes away. */
+    clipsFor: function (slug) {
+      return getEntry(slug).then(function (entry) {
+        var out = [];
+        ((entry && entry.senses) || []).forEach(function (sense) {
+          (sense.videos || []).forEach(function (v) { out.push(v); });
+        });
+        return out;
+      }).catch(function () { return []; });
+    },
+
+    /* Swap the clip behind a card and keep everything learnt about it. The id
+       carries the clip, so the card has to move keys - but a box, a streak and
+       a date last seen are about the word, not the recording of it. */
+    replaceCardClip: function (oldId, slug, word, vid, def) {
+      var old = favs[oldId];
+      if (!old) return null;
+      var newId = slug + '#' + (vid.id || vid.u);
+      if (newId === oldId) return oldId;
+      if (!favs[newId]) {
+        var next = newCard(newId, word, slug, vid, def || old.def || '');
+        next.box = old.box; next.seen = old.seen; next.right = old.right;
+        next.wrong = old.wrong; next.last = old.last; next.added = old.added;
+        favs[newId] = next;
+      }
+      delete favs[oldId];
+      saveFavs();
+      return newId;
+    },
+
+    removeCard: function (id) {
+      if (!favs[id]) return false;
+      delete favs[id];
+      saveFavs();
+      return true;
+    },
+
+    redrawDeck: function () { openDeck(); },
 
     /* Does the dictionary already carry this slug? Asked before anything is
        published as a new word, so a word that merely has no video yet is never
