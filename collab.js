@@ -673,28 +673,38 @@ function addTryButton() {
 
 const INDEX_KEY = 'signcards.class.v1';
 
+/* Bump this whenever the shape of an entry changes. The sync only ever asks
+   for what has changed since last time, so a clip already in the cache is
+   never fetched again - and a field added later never reaches it. That is not
+   theoretical: ownership was added after the first clip was published, so that
+   clip sat in the cache with no owner and its own author was never offered the
+   chance to withdraw it. A format that does not match is thrown away, which
+   makes the next sync a full one. */
+const INDEX_FORMAT = 2;
+
 function readIndex() {
   try {
     const raw = JSON.parse(localStorage.getItem(INDEX_KEY) || 'null');
     if (!raw || typeof raw !== 'object') return blankIndex();
+    if (raw.format !== INDEX_FORMAT) return blankIndex();   // refetch everything
     /* No prototype. Someone will eventually add a word called "constructor",
        and on a plain object that key already holds a function. */
     const entries = Object.create(null);
     Object.keys(raw.entries || {}).forEach(function (k) { entries[k] = raw.entries[k]; });
     const gone = Object.create(null);
     Object.keys(raw.gone || {}).forEach(function (k) { gone[k] = raw.gone[k]; });
-    return { since: raw.since || 0, entries: entries, gone: gone };
+    return { format: INDEX_FORMAT, since: raw.since || 0, entries: entries, gone: gone };
   } catch (e) { return blankIndex(); }
 }
 
 function blankIndex() {
-  return { since: 0, entries: Object.create(null), gone: Object.create(null) };
+  return { format: INDEX_FORMAT, since: 0, entries: Object.create(null), gone: Object.create(null) };
 }
 
 function writeIndex(ix) {
   try {
-    localStorage.setItem(INDEX_KEY,
-      JSON.stringify({ since: ix.since, entries: ix.entries, gone: ix.gone || {} }));
+    localStorage.setItem(INDEX_KEY, JSON.stringify({
+      format: INDEX_FORMAT, since: ix.since, entries: ix.entries, gone: ix.gone || {} }));
   } catch (e) { /* full or blocked; it will be refetched next time */ }
 }
 
@@ -821,7 +831,7 @@ function applyDeltas(prev, clips, words) {
     if (!e.videos.length && !e.isNew) delete entries[k];
   });
 
-  return { since: since, entries: entries, gone: gone };
+  return { format: INDEX_FORMAT, since: since, entries: entries, gone: gone };
 }
 
 function snapRows(snap) {
@@ -1300,4 +1310,5 @@ function esc(t) {
 if (window.SignCards) {
   window.SignCards.onDeckRow = markWithdrawn;
 }
+
 
