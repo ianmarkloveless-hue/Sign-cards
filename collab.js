@@ -709,8 +709,16 @@ function provider() {
       Object.keys(index.entries).forEach(function (slug) {
         const e = index.entries[slug];
         /* Needs a clip to be worth listing. A word whose only recording was
-           withdrawn would otherwise sit in search showing nothing at all. */
-        if (e && e.isNew && e.videos && e.videos.length) out.push([e.word, slug]);
+           withdrawn would otherwise sit in search showing nothing at all.
+
+           Every word with a clip, not only the ones the class added as new
+           words. A clip recorded on a word the dictionary already has is still
+           the class's content and still belongs in the User content category,
+           and filtering on isNew here meant eight clips arrived in app.js as
+           one. Newness is not this file's decision anyway - rebuildWords
+           settles it against the dictionary, because a publisher's phone can
+           be wrong about it. */
+        if (e && e.videos && e.videos.length) out.push([e.word, slug]);
       });
       out.sort(function (a, b) { return a[0].localeCompare(b[0]); });
       return out;
