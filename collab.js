@@ -352,6 +352,20 @@ function closeRecorder() {
   rec.facts.hidden = true;
   rec.sec.hidden = true;
   document.body.classList.remove('is-recording');
+
+  /* After publishing, go to the word rather than back where you came from.
+     classChanged redraws whichever screen is open, and while publishing that
+     is the recorder - so the page underneath was drawn before the clip
+     existed and un-hiding it shows exactly what it showed before. Opening the
+     word draws it afresh, and it is where you wanted to be anyway. */
+  const done = rec.published;
+  rec.published = null;
+  if (done && window.SignCards && window.SignCards.showWord) {
+    cameFrom = null;
+    window.SignCards.showWord(done.slug, done.word);
+    return;
+  }
+
   if (cameFrom) { cameFrom.hidden = false; cameFrom = null; }
   window.scrollTo(0, 0);
 }
@@ -377,6 +391,7 @@ function intro(word) {
   rec.play.hidden = true;
   rec.stage.hidden = false;
   rec.facts.hidden = true;
+  rec.published = null;
   buttons([
     ['Start the countdown', 'go', function () { run(word); }],
     ['Cancel', 'quiet', closeRecorder]
@@ -590,6 +605,7 @@ async function doPublish(blob, word) {
   rec.hint.textContent = 'Sending ' + Math.round(blob.size / 1024) + ' KB. This takes a moment.';
   try {
     const r = await publish(blob, rec.slug, word, rec.def, rec.isNew);
+    rec.published = { slug: rec.slug, word: word };
     rec.title.textContent = 'Published';
     rec.hint.textContent = '';
     rec.play.hidden = true;
@@ -1120,4 +1136,5 @@ if (window.SignCards) {
     box.appendChild(b);
   };
 }
+
 

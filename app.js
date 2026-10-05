@@ -9,7 +9,7 @@
   /* Shown in Settings, so it is possible to tell from the phone which build is
      running. Bump it when releasing, and tag the commit to match. The cache
      name in sw.js is a separate thing: that only tells the phone to refetch. */
-  var APP_VERSION = '1.8';
+  var APP_VERSION = '1.8.1';
 
   var FAV_KEY = 'signcards.favourites.v1';
   var SET_KEY = 'signcards.settings.v1';
@@ -1461,8 +1461,13 @@
       return Object.prototype.hasOwnProperty.call(baseSlugs, slug);
     },
 
-    /* Show a word, so a newly published one can be opened straight away. */
-    showWord: function (slug, word) { openWord(slug, word); },
+    /* Show a word, so a newly published one can be opened straight away. The
+       word view lives inside the search screen, so go there first. */
+    showWord: function (slug, word) {
+      var tab = document.querySelector('.tab[data-screen="search"]');
+      if (tab) tab.click();
+      openWord(slug, word);
+    },
 
     /* Put a clip in the deck. Same shape as starring one by hand, so a
        published clip is an ordinary card from the moment it exists. */
