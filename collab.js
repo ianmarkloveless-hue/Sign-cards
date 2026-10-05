@@ -681,17 +681,20 @@ function readIndex() {
        and on a plain object that key already holds a function. */
     const entries = Object.create(null);
     Object.keys(raw.entries || {}).forEach(function (k) { entries[k] = raw.entries[k]; });
-    return { since: raw.since || 0, entries: entries };
+    const gone = Object.create(null);
+    Object.keys(raw.gone || {}).forEach(function (k) { gone[k] = raw.gone[k]; });
+    return { since: raw.since || 0, entries: entries, gone: gone };
   } catch (e) { return blankIndex(); }
 }
 
 function blankIndex() {
-  return { since: 0, entries: Object.create(null) };
+  return { since: 0, entries: Object.create(null), gone: Object.create(null) };
 }
 
 function writeIndex(ix) {
   try {
-    localStorage.setItem(INDEX_KEY, JSON.stringify({ since: ix.since, entries: ix.entries }));
+    localStorage.setItem(INDEX_KEY,
+      JSON.stringify({ since: ix.since, entries: ix.entries, gone: ix.gone || {} }));
   } catch (e) { /* full or blocked; it will be refetched next time */ }
 }
 
@@ -759,6 +762,8 @@ function applyDeltas(prev, clips, words) {
     const e = prev.entries[k];
     entries[k] = { word: e.word, def: e.def, isNew: e.isNew, videos: (e.videos || []).slice() };
   });
+  const gone = Object.create(null);
+  Object.keys(prev.gone || {}).forEach(function (k) { gone[k] = prev.gone[k]; });
   let since = prev.since || 0;
 
   function at(d) {
@@ -788,9 +793,17 @@ function applyDeltas(prev, clips, words) {
     if (!d.slug) return;
     const e = slot(d.slug, d.word);
     e.videos = e.videos.filter(function (v) { return v.id !== c.id; });
+    if (d.status && d.status !== 'live') {
+      /* Remembered, so a card still carrying it can be told rather than
+         quietly going on showing a sign someone has taken back. */
+      gone[c.id] = { slug: d.slug, word: d.word || d.slug, byName: d.byName || '' };
+    } else if (Object.prototype.hasOwnProperty.call(gone, c.id)) {
+      delete gone[c.id];        // put back up again
+    }
     if (d.status === 'live' && d.url) {
       e.videos.push({
         id: c.id,
+        by: d.by || '',          // so your own clips can be offered a withdraw
         u: d.url,
         /* label stays empty. The deck renders a card as "label (word)", so a
            name here would turn every row into "Sarah (apple)". credit carries
@@ -808,7 +821,7 @@ function applyDeltas(prev, clips, words) {
     if (!e.videos.length && !e.isNew) delete entries[k];
   });
 
-  return { since: since, entries: entries };
+  return { since: since, entries: entries, gone: gone };
 }
 
 function snapRows(snap) {
@@ -965,8 +978,11 @@ function recordButton(container, slug, word, def) {
   b.className = 'btn rec-offer';
   b.type = 'button';
   b.textContent = 'Record your own “' + word + '”';
-  b.addEventListener('click', function () { openRecorder(word, slug, def); });
+  b.addEventListener('click', function () { openRecorder(word, slug, def, false); });
   container.appendChild(b);
+
+  /* And, under it, the way to take your own recording back down. */
+  withdrawControls(container, slug, word);
 }
 
 if (window.SignCards) {
@@ -1137,4 +1153,151 @@ if (window.SignCards) {
   };
 }
 
+/* ---------------- withdrawing a clip ----------------
+
+   Withdrawn, not deleted. The document is marked and the file is left where it
+   is, so nothing anyone already holds starts returning 404. What changes is
+   that it stops being offered: it leaves the word page, and anyone practising
+   it is told.
+
+   Deleting the file is a different act, for when someone wants themselves off
+   the internet rather than wanting a wrong sign to stop spreading. That is not
+   this. */
+
+async function withdraw(clipId) {
+  const f = await firebase();
+  if (!f.auth.currentUser) throw new Error('not signed in');
+  await f.S.setDoc(f.S.doc(f.db, 'clips', clipId), {
+    status: 'withdrawn',
+    updated: f.S.serverTimestamp()
+  }, { merge: true });
+  await sync(false);
+}
+
+/* Your own clips on this word, so they can be offered a withdraw control.
+   Whose a clip is comes from the index rather than the page, because the page
+   has no idea. */
+function myClips(slug) {
+  const e = Object.prototype.hasOwnProperty.call(index.entries, slug)
+    ? index.entries[slug] : null;
+  if (!e || !fb || !fb.auth || !fb.auth.currentUser) return [];
+  const me = fb.auth.currentUser.uid;
+  return (e.videos || []).filter(function (v) { return v.by === me; });
+}
+
+function withdrawControls(container, slug, word) {
+  const mine = myClips(slug);
+  if (!mine.length) return;
+
+  mine.forEach(function (v, i) {
+    let armed = 0, timer = null;
+    const b = document.createElement('button');
+    b.className = 'btn btn-danger rec-offer';
+    b.type = 'button';
+    const label = mine.length > 1
+      ? 'Withdraw your clip ' + (i + 1) + ' of ' + mine.length
+      : 'Withdraw your clip';
+    b.textContent = label;
+
+    function disarm() {
+      armed = 0;
+      clearTimeout(timer);
+      b.textContent = label;
+      b.classList.remove('armed');
+    }
+
+    /* Two deliberate taps, as the reset button does. Withdrawing takes a sign
+       away from three other people; a dialog on a phone gets tapped through. */
+    b.addEventListener('click', async function () {
+      if (!armed) {
+        armed = 1;
+        b.textContent = 'Tap again to take it down for everyone';
+        b.classList.add('armed');
+        timer = setTimeout(disarm, 5000);
+        return;
+      }
+      disarm();
+      b.disabled = true;
+      b.textContent = 'Withdrawing…';
+      try {
+        await withdraw(v.id);
+        toast('Withdrawn');
+        if (window.SignCards && window.SignCards.showWord) {
+          window.SignCards.showWord(slug, word);
+        }
+      } catch (e) {
+        b.disabled = false;
+        b.textContent = label;
+        toast('Could not withdraw it');
+      }
+    });
+    container.appendChild(b);
+  });
+}
+
+/* ---------------- a card whose clip has gone ----------------
+
+   The file still plays, so nothing is broken. But a clip is usually withdrawn
+   because the sign was wrong, and quietly carrying on would mean practising a
+   mistake. So say so, and offer another recording of the same word - keeping
+   the box and the streak, which are about the word rather than the recording. */
+
+function markWithdrawn(row, card) {
+  if (!state.enabled) return;
+  const gone = index.gone || {};
+  const clipId = String(card.id || '').split('#')[1];
+  if (!clipId || !Object.prototype.hasOwnProperty.call(gone, clipId)) return;
+
+  row.classList.add('is-withdrawn');
+
+  const note = document.createElement('div');
+  note.className = 'withdrawn-note';
+  const who = gone[clipId].byName;
+  note.innerHTML = '<span>' + (who ? esc(who) + ' withdrew this clip.' : 'This clip was withdrawn.')
+    + ' Your progress is kept.</span>';
+
+  const swap = document.createElement('button');
+  swap.type = 'button';
+  swap.className = 'btn';
+  swap.textContent = 'Use another clip';
+  swap.addEventListener('click', async function () {
+    swap.disabled = true;
+    swap.textContent = 'Looking…';
+    const all = await (window.SignCards.clipsFor ? window.SignCards.clipsFor(card.slug) : []);
+    const other = all.filter(function (v) { return (v.id || v.u) !== clipId; })[0];
+    if (!other) {
+      swap.disabled = false;
+      swap.textContent = 'Use another clip';
+      note.querySelector('span').textContent = 'There is no other clip for this word yet.';
+      return;
+    }
+    window.SignCards.replaceCardClip(card.id, card.slug, card.word, other, card.def);
+    toast('Swapped, progress kept');
+    window.SignCards.redrawDeck();
+  });
+
+  const drop = document.createElement('button');
+  drop.type = 'button';
+  drop.className = 'btn btn-quiet';
+  drop.textContent = 'Remove the card';
+  drop.addEventListener('click', function () {
+    window.SignCards.removeCard(card.id);
+    toast('Removed');
+    window.SignCards.redrawDeck();
+  });
+
+  note.appendChild(swap);
+  note.appendChild(drop);
+  row.insertAdjacentElement('afterend', note);
+}
+
+function esc(t) {
+  const d = document.createElement('div');
+  d.textContent = String(t);
+  return d.innerHTML;
+}
+
+if (window.SignCards) {
+  window.SignCards.onDeckRow = markWithdrawn;
+}
 
