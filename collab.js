@@ -72,6 +72,7 @@ function paint(user, msg) {
 
   if (user) {
     addTryButton();
+    addSyncRow();
     el.who.textContent = 'Signed in as ' + (state.name || user.email) + '.';
     el.note.textContent = msg || 'Clips you record will carry your name.';
     return;
@@ -97,7 +98,7 @@ async function firebase() {
   /* One listener, for the rest of this page's life: it fires on sign-in, on
      sign-out, and on a session restored from a previous visit. */
   fb.A.onAuthStateChanged(fb.auth, (user) => {
-    if (user) loadName(user);
+    if (user) { loadName(user); sync(false).then(function () { saySync(); }); }
     paint(user);
   });
   return fb;
@@ -148,6 +149,7 @@ if (ready) {
   el.on.addEventListener('change', async () => {
     state.enabled = el.on.checked;
     writeState(state);
+    if (window.SignCards && window.SignCards.classChanged) window.SignCards.classChanged();
     paint(null);
     if (!state.enabled) {
       if (fb && fb.auth.currentUser) { try { await fb.A.signOut(fb.auth); } catch (e) {} }
@@ -640,15 +642,19 @@ let index = readIndex();
 function provider() {
   return {
     words: function () {
+      if (!state.enabled) return [];
       const out = [];
       Object.keys(index.entries).forEach(function (slug) {
         const e = index.entries[slug];
-        if (e && e.isNew) out.push([e.word, slug]);
+        /* Needs a clip to be worth listing. A word whose only recording was
+           withdrawn would otherwise sit in search showing nothing at all. */
+        if (e && e.isNew && e.videos && e.videos.length) out.push([e.word, slug]);
       });
       out.sort(function (a, b) { return a[0].localeCompare(b[0]); });
       return out;
     },
     entry: function (slug) {
+      if (!state.enabled) return null;
       const e = Object.prototype.hasOwnProperty.call(index.entries, slug)
         ? index.entries[slug] : null;
       if (!e || !e.videos || !e.videos.length) return null;
@@ -669,3 +675,160 @@ function setIndex(next) {
   writeIndex(index);
   if (window.SignCards && window.SignCards.classChanged) window.SignCards.classChanged();
 }
+
+/* ---------------- the sync ----------------
+
+   One question, asked of each collection: what has changed since last time.
+
+       where('updated', '>', since)
+
+   Keyed on updated rather than created on purpose. A withdrawn clip does not
+   change when it was created, so a created-based query would never notice one
+   going away - the kind of thing that is invisible for months and then wrong
+   at the worst moment.
+
+   At rest it returns nothing and costs a couple of reads. It is never waited
+   on: the cache is served first and this catches up behind it. */
+
+/* Pure, and separated from the fetch so it can be tested without a network or
+   a project to write to. Takes plain arrays, returns the next index. */
+function applyDeltas(prev, clips, words) {
+  const entries = Object.create(null);
+  Object.keys(prev.entries).forEach(function (k) {
+    const e = prev.entries[k];
+    entries[k] = { word: e.word, def: e.def, isNew: e.isNew, videos: (e.videos || []).slice() };
+  });
+  let since = prev.since || 0;
+
+  function at(d) {
+    const t = d && d.updated;
+    if (!t) return 0;
+    return typeof t.toMillis === 'function' ? t.toMillis() : Number(t) || 0;
+  }
+  function slot(slug, word) {
+    if (!Object.prototype.hasOwnProperty.call(entries, slug)) {
+      entries[slug] = { word: word || slug, def: '', isNew: false, videos: [] };
+    } else if (word) { entries[slug].word = word; }
+    return entries[slug];
+  }
+
+  /* Words first, so a clip arriving alongside its word finds it already there. */
+  words.forEach(function (w) {
+    const d = w.data || {};
+    since = Math.max(since, at(d));
+    const e = slot(w.id, d.word);
+    e.def = d.def || '';
+    e.isNew = true;          // advisory; app.js decides against the dictionary
+  });
+
+  clips.forEach(function (c) {
+    const d = c.data || {};
+    since = Math.max(since, at(d));
+    if (!d.slug) return;
+    const e = slot(d.slug, d.word);
+    e.videos = e.videos.filter(function (v) { return v.id !== c.id; });
+    if (d.status === 'live' && d.url) {
+      e.videos.push({
+        id: c.id,
+        u: d.url,
+        /* label stays empty. The deck renders a card as "label (word)", so a
+           name here would turn every row into "Sarah (apple)". credit carries
+           it, and the word view shows that on its own. */
+        label: '',
+        credit: d.byName || 'the class'
+      });
+    }
+  });
+
+  /* A word nobody has a live clip for, and which the class did not add as a
+     word in its own right, is not worth carrying. */
+  Object.keys(entries).forEach(function (k) {
+    const e = entries[k];
+    if (!e.videos.length && !e.isNew) delete entries[k];
+  });
+
+  return { since: since, entries: entries };
+}
+
+function snapRows(snap) {
+  const out = [];
+  snap.forEach(function (d) { out.push({ id: d.id, data: d.data() }); });
+  return out;
+}
+
+let syncing = false;
+
+async function sync(full) {
+  if (syncing || !state.enabled) return null;
+  syncing = true;
+  try {
+    const f = await firebase();
+    if (!f.auth.currentUser) return null;       // the rules need a signed-in reader
+    const since = full ? 0 : (index.since || 0);
+    const T = f.S.Timestamp.fromMillis(since);
+    const [clipSnap, wordSnap] = await Promise.all([
+      f.S.getDocs(f.S.query(f.S.collection(f.db, 'clips'), f.S.where('updated', '>', T))),
+      f.S.getDocs(f.S.query(f.S.collection(f.db, 'words'), f.S.where('updated', '>', T)))
+    ]);
+    const clips = snapRows(clipSnap), words = snapRows(wordSnap);
+    if (clips.length || words.length) setIndex(applyDeltas(index, clips, words));
+    return { clips: clips.length, words: words.length };
+  } catch (e) {
+    /* Offline, rules, a bad clock - none of it matters. The cache stands and
+       the dictionary never noticed a request was made. */
+    return { error: (e && e.code) || (e && e.name) || 'failed' };
+  } finally { syncing = false; }
+}
+
+/* ---------------- what the class has, shown in Settings ---------------- */
+
+function classCounts() {
+  let words = 0, clips = 0;
+  Object.keys(index.entries).forEach(function (k) {
+    const e = index.entries[k];
+    if (e.isNew) words++;
+    clips += (e.videos || []).length;
+  });
+  return { words: words, clips: clips };
+}
+
+function saySync(msg) {
+  const p = document.getElementById('class-status');
+  if (!p) return;
+  const c = classCounts();
+  p.textContent = msg || (c.clips
+    ? c.clips + (c.clips === 1 ? ' clip' : ' clips') + ' from the class, '
+      + c.words + (c.words === 1 ? ' new word' : ' new words') + '.'
+    : 'Nothing from the class yet.');
+}
+
+function addSyncRow() {
+  if (!ready || document.getElementById('btn-sync')) return;
+  const p = document.createElement('p');
+  p.id = 'class-status';
+  p.className = 'muted';
+  p.style.marginBottom = '8px';
+  el.in.insertBefore(p, el.signout);
+
+  const b = document.createElement('button');
+  b.id = 'btn-sync';
+  b.type = 'button';
+  b.className = 'btn';
+  b.style.width = '100%';
+  b.style.marginBottom = '8px';
+  b.textContent = 'Check for new words';
+  b.addEventListener('click', async function () {
+    b.disabled = true;
+    saySync('Checking…');
+    const r = await sync(false);
+    b.disabled = false;
+    if (!r) { saySync('Sign in first.'); return; }
+    if (r.error) { saySync('Could not check (' + r.error + '). Nothing has changed.'); return; }
+    saySync(r.clips || r.words ? null : 'Nothing new.');
+    if (!r.clips && !r.words) setTimeout(function () { saySync(); }, 2500);
+  });
+  el.in.insertBefore(b, el.signout);
+  saySync();
+}
+
+
