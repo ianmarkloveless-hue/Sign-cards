@@ -248,6 +248,14 @@ function styleOnce() {
     // the tab bar would be a way out of a half-finished recording
     'body.is-recording .tabs{display:none}',
     '.rec-head{margin:6px 0 14px}',
+    /* The quiet offer at the end of a result list. A line of text, not a
+       button: something was found, so the list is the answer and this is the
+       footnote. Full width so the tap target is still a comfortable size. */
+    '.rec-offer-quiet{display:block;width:100%;background:none;border:0;'
+      + 'color:var(--muted);font:inherit;font-size:.86rem;text-align:left;'
+      + 'padding:14px 2px 4px;text-decoration:underline;text-underline-offset:3px;'
+      + 'cursor:pointer}',
+    '.rec-offer-quiet:hover{color:var(--text)}',
     '.rec-head h2{font-size:1.35rem;font-weight:650;letter-spacing:-.02em;margin:0 0 4px}',
     // the live view. No border-radius or overflow clipping around a video, and
     // no fixed ancestor anywhere above it.
@@ -1065,6 +1073,10 @@ function buildAdd() {
   sec.innerHTML =
     '<header class="rec-head"><h2 id="aw-title">Add a word</h2>' +
       '<p class="muted" id="aw-hint"></p></header>' +
+    '<label class="field"><span>Word</span>' +
+      '<input id="aw-word" type="text" autocapitalize="none" autocomplete="off" ' +
+      'spellcheck="false"></label>' +
+    '<p class="muted" id="aw-warn" hidden></p>' +
     '<label class="field"><span>Definition</span>' +
       '<textarea id="aw-def" rows="3"></textarea></label>' +
     '<p class="muted" id="aw-source"></p>' +
@@ -1074,9 +1086,24 @@ function buildAdd() {
   addScreen = {
     sec: sec,
     title: sec.querySelector('#aw-title'), hint: sec.querySelector('#aw-hint'),
+    word: sec.querySelector('#aw-word'), warn: sec.querySelector('#aw-warn'),
     def: sec.querySelector('#aw-def'), source: sec.querySelector('#aw-source'),
-    btns: sec.querySelector('#aw-btns')
+    btns: sec.querySelector('#aw-btns'),
+    autoDef: ''            // the last definition Wiktionary supplied, not yours
   };
+
+  /* Change the word and the definition should follow it - but only while the
+     definition is still the one that was fetched. Something typed by hand is
+     not thrown away because the spelling was corrected afterwards. */
+  addScreen.word.addEventListener('change', function () {
+    const w = addScreen.word.value.trim();
+    addScreen.title.textContent = w ? 'Add “' + w + '”' : 'Add a word';
+    checkWord();
+    if (w && (!addScreen.def.value.trim() || addScreen.def.value === addScreen.autoDef)) {
+      fillDefinition(w);
+    }
+  });
+  addScreen.word.addEventListener('input', checkWord);
   return addScreen;
 }
 
@@ -1099,10 +1126,47 @@ function closeAdd() {
   window.scrollTo(0, 0);
 }
 
+/* Why the word can be wrong, and has to be checked here rather than only at
+   the door: coming from a search, the offer already refused a word the
+   dictionary has. Coming from the blank search screen there was no word to
+   refuse, and either way the field can be edited afterwards. This is the only
+   check every route passes through. */
+function checkWord() {
+  const w = addScreen.word.value.trim();
+  const slug = slugify(w);
+  let msg = '';
+  if (!w) msg = '';
+  else if (!slug) msg = 'That needs at least one letter or number.';
+  else if (window.SignCards.hasWord && window.SignCards.hasWord(slug)) {
+    msg = '“' + w + '” is already in the dictionary. Search for it and use '
+        + '“Record your own” instead, so your clip joins the ones already there.';
+  }
+  addScreen.warn.textContent = msg;
+  addScreen.warn.hidden = !msg;
+  return !msg && !!slug;
+}
+
+async function fillDefinition(word) {
+  addScreen.source.textContent = 'Looking for a definition…';
+  const found = await lookUp(word);
+  /* The word may have moved on while this was in flight. */
+  if (addScreen.word.value.trim() !== word) return;
+  addScreen.source.textContent =
+    found.state === 'found' ? 'From Wiktionary' + (found.pos ? ' (' + found.pos.toLowerCase() + ')' : '')
+      + ' — change it if it is not the right sense.'
+    : found.state === 'unknown' ? 'Wiktionary has never heard of it. Write your own, or leave it empty.'
+    : 'Could not reach Wiktionary. Write your own, or leave it empty.';
+  if (found.state === 'found') {
+    addScreen.def.value = found.def;
+    addScreen.autoDef = found.def;
+  }
+}
+
+/* `word` may be empty: that is the way in from the blank search screen, where
+   nothing has been typed yet and the field is filled in here instead. */
 async function openAddWord(word) {
   if (!buildAdd()) return;
-  const slug = slugify(word);
-  if (!slug) return;
+  word = (word || '').trim();
 
   cameFrom = document.querySelector('#screens > .screen:not([hidden])');
   const all = document.querySelectorAll('#screens > .screen');
@@ -1111,52 +1175,79 @@ async function openAddWord(word) {
   document.body.classList.add('is-recording');
   window.scrollTo(0, 0);
 
-  addScreen.title.textContent = 'Add “' + word + '”';
+  addScreen.title.textContent = word ? 'Add “' + word + '”' : 'Add a word';
   addScreen.hint.textContent = 'It will be filed under User content, and everyone in the class '
     + 'will be able to find it.';
+  addScreen.word.value = word;
   addScreen.def.value = '';
-  addScreen.source.textContent = 'Looking for a definition…';
-  addButtons([['Cancel', 'quiet', closeAdd]]);
-
-  const found = await lookUp(word);
-  addScreen.source.textContent =
-    found.state === 'found' ? 'From Wiktionary' + (found.pos ? ' (' + found.pos.toLowerCase() + ')' : '')
-      + ' — change it if it is not the right sense.'
-    : found.state === 'unknown' ? 'Wiktionary has never heard of it. Write your own, or leave it empty.'
-    : 'Could not reach Wiktionary. Write your own, or leave it empty.';
-  if (found.state === 'found') addScreen.def.value = found.def;
+  addScreen.autoDef = '';
+  addScreen.source.textContent = '';
+  checkWord();
 
   addButtons([
     ['Record it', 'go', function () {
+      if (!checkWord()) { addScreen.word.focus(); return; }
+      const w = addScreen.word.value.trim();
       const def = addScreen.def.value.trim();
       closeAdd();
-      openRecorder(word, slug, def, true);
+      openRecorder(w, slugify(w), def, true);
     }],
     ['Cancel', 'quiet', closeAdd]
   ]);
+
+  if (word) fillDefinition(word);
+  else addScreen.word.focus();
 }
 
-/* ---------------- the way in, when a search finds nothing ---------------- */
+/* ---------------- the three ways in from search ----------------
+
+   A word can turn out to be missing at three different moments, and until now
+   only one of them offered to add it. "determined" is not a headword, but it
+   is inside "determination" and "undetermined", so the list comes back full
+   and the no-match offer never appears.
+
+   Loudness follows certainty. Nothing found at all is a dead end, so the offer
+   is a button. A list that found something is not, so it is a quiet line at
+   the end - the word is probably there and tapping it is the right move, and a
+   second button under a live list would be easy to hit by mistake while still
+   typing. */
+
+function offerAdd(box, word, quiet) {
+  if (!state.enabled) return;
+  if (!fb || !fb.auth || !fb.auth.currentUser) return;
+  word = (word || '').trim();
+
+  /* With a word in hand, decline the ones that are not worth offering. Without
+     one - the blank search screen - there is nothing yet to judge, and the add
+     screen does the checking instead. */
+  if (word) {
+    if (word.length < 2) return;
+    const slug = slugify(word);
+    if (!slug) return;
+    /* A word the dictionary has is not a new word. Adding it again would list
+       it twice; "Record your own" on the word itself is the way in. */
+    if (window.SignCards.hasWord && window.SignCards.hasWord(slug)) return;
+  }
+
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = quiet ? 'rec-offer-quiet' : 'btn rec-offer';
+  b.textContent = word
+    ? (quiet ? 'Not here? Add “' + word + '”' : 'Add “' + word + '” and record it')
+    : 'Add a word and record it';
+  b.addEventListener('click', function () { openAddWord(word); });
+  box.appendChild(b);
+}
 
 if (window.SignCards) {
-  window.SignCards.onNoMatch = function (box, query) {
-    if (!state.enabled) return;
-    if (!fb || !fb.auth || !fb.auth.currentUser) return;
-    const word = query.trim();
-    if (!word || word.length < 2) return;
+  /* Nothing found: a button. */
+  window.SignCards.onNoMatch = function (box, query) { offerAdd(box, query, false); };
 
-    const slug = slugify(word);
-    /* A word the dictionary has but search did not surface is not a new word.
-       Adding it again would list it twice. */
-    if (!slug || (window.SignCards.hasWord && window.SignCards.hasWord(slug))) return;
+  /* Nothing typed yet: a button, with no word to carry across. */
+  window.SignCards.onEmptySearch = function (box) { offerAdd(box, '', false); };
 
-    const b = document.createElement('button');
-    b.className = 'btn rec-offer';
-    b.type = 'button';
-    b.textContent = 'Add “' + word + '” and record it';
-    b.addEventListener('click', function () { openAddWord(word); });
-    box.appendChild(b);
-  };
+  /* Something found, but perhaps not the thing: a quiet line underneath. */
+  window.SignCards.onResultsEnd = function (box, query) { offerAdd(box, query, true); };
 }
 
 /* ---------------- withdrawing a clip ----------------
