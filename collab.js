@@ -1202,29 +1202,28 @@ async function openAddWord(word) {
    is inside "determination" and "undetermined", so the list comes back full
    and the no-match offer never appears.
 
-   The same button in all three, reading the same way. A quieter line at the
-   end of a list was tried first, on the reasoning that a list which found
-   something is not a dead end - but quiet turned out to mean overlooked, and
-   three spellings of one offer is harder to recognise than one. The word
-   itself is not in the label either: it is in the field on the next screen,
-   where it can be corrected. */
+   The same button both times, reading the same way. A quieter line at the end
+   of a list was tried first, on the reasoning that a list which found
+   something is not a dead end - but quiet turned out to mean overlooked. The
+   word itself is not in the label either: it is in the field on the next
+   screen, where it can be corrected.
+
+   It is always there, and deliberately not conditional on anything about what
+   has been typed. It used to be hidden for a word the dictionary already had,
+   which meant it came and went between keystrokes: typing towards "deference"
+   it vanished at "defer", which is a headword, and returned at "defere". A
+   control that blinks is worse than one that is sometimes not needed, and
+   people have to learn it is there at all.
+
+   Nothing is lost by dropping that check. The add screen tests the word on
+   every keystroke and again on Record, and says in red that a word already in
+   the dictionary wants "Record your own" instead. That is the better place for
+   it: it explains, where a missing button only puzzled. */
 
 function offerAdd(box, word) {
   if (!state.enabled) return;
   if (!fb || !fb.auth || !fb.auth.currentUser) return;
   word = (word || '').trim();
-
-  /* With a word in hand, decline the ones that are not worth offering. Without
-     one - the blank search screen - there is nothing yet to judge, and the add
-     screen does the checking instead. */
-  if (word) {
-    if (word.length < 2) return;
-    const slug = slugify(word);
-    if (!slug) return;
-    /* A word the dictionary has is not a new word. Adding it again would list
-       it twice; "Record your own" on the word itself is the way in. */
-    if (window.SignCards.hasWord && window.SignCards.hasWord(slug)) return;
-  }
 
   const b = document.createElement('button');
   b.type = 'button';
@@ -1235,9 +1234,6 @@ function offerAdd(box, word) {
 }
 
 if (window.SignCards) {
-  /* Nothing typed yet, so nothing to carry across. */
-  window.SignCards.onEmptySearch = function (box) { offerAdd(box, ''); };
-
   /* Something found, but perhaps not the thing you were after. */
   window.SignCards.onResultsEnd = function (box, query) { offerAdd(box, query); };
 
