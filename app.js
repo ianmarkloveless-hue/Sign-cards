@@ -9,7 +9,7 @@
   /* Shown in Settings, so it is possible to tell from the phone which build is
      running. Bump it when releasing, and tag the commit to match. The cache
      name in sw.js is a separate thing: that only tells the phone to refetch. */
-  var APP_VERSION = '1.12.1';
+  var APP_VERSION = '1.12.2';
 
   var FAV_KEY = 'signcards.favourites.v1';
   var SET_KEY = 'signcards.settings.v1';
@@ -287,16 +287,7 @@
     $('#word-view').hidden = true;
     box.hidden = false;
 
-    if (q.length < 1) {
-      box.innerHTML = emptySearch();
-      /* The class features get to offer adding a word from here too, with
-         nothing typed yet. Logged, not swallowed. */
-      try {
-        var blank = window.SignCards && window.SignCards.onEmptySearch;
-        if (blank) blank(box);
-      } catch (e) { console.error('class hook:', e); }
-      return;
-    }
+    if (q.length < 1) { box.innerHTML = emptySearch(); return; }
 
     /* The same query written as a slug, so that what is typed can be matched
        against how a word is filed as well as how it is spelt. 737 of the 19,179
@@ -1522,10 +1513,8 @@
     /* And this when a search comes back with nothing, to offer adding it. */
     onNoMatch: null,
 
-    /* The same offer in the two other places a word can turn out to be
-       missing: before anything is typed, and at the end of a list that found
-       something but not the thing you were after. */
-    onEmptySearch: null,
+    /* And this at the end of a list that found something, which may still
+       not be the thing you were after. */
     onResultsEnd: null,
 
     /* And this for each row of the deck, as it is drawn. */
