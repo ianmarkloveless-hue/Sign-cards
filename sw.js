@@ -9,7 +9,7 @@
    a shard at a time, over mobile data. They are now kept apart and only the
    one that actually changed is discarded. */
 
-var VERSION = 'signcards-v45';        // the app; bump on every release
+var VERSION = 'signcards-v46';        // the app; bump on every release
 var DATA = 'signcards-data-v1';       // the dictionary; bump only when data/ is rebuilt
 
 var SHELL = [

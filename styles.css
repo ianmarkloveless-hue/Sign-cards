@@ -358,6 +358,19 @@ button:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(-
 /* The class's offer at the end of a word. Full width, below the clips, so it
    reads as "and you could add one" rather than competing with them. */
 .rec-offer{width:100%;flex:none;margin-top:4px}
+
+/* The offer to add a word, at the end of a search. Here rather than in the
+   style block collab.js injects, because that block only goes in when the
+   recorder or the add screen is first built - so a search done before either
+   had been opened drew the caption with no styles at all: ranged left, no
+   space, reading as one more row of the list. A rule that is needed the first
+   time anything is drawn belongs in the stylesheet that is always loaded.
+
+   The space is what stops the button being mistaken for the last result: one
+   match leaves them 4px apart otherwise, and the button is the heavier of the
+   two to look at. The caption is centred over the button it belongs to. */
+.add-offer{margin-top:40px}
+.add-offer-cap{color:var(--muted);font-size:.86rem;margin:0 0 8px;padding:0 2px;text-align:center}
 .field textarea{
   width:100%;appearance:none;border:1px solid var(--line);background:var(--surface-2);
   color:var(--text);font:inherit;padding:12px 14px;border-radius:var(--r);resize:vertical;
