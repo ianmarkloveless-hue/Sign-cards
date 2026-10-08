@@ -252,6 +252,13 @@ function styleOnce() {
        app's own red, the one the "no" answer and the danger buttons use,
        rather than a second red that means the same thing. */
     '.aw-warn{color:var(--no);font-size:.86rem;line-height:1.5;margin:-4px 0 14px}',
+    /* A one-result search puts the end of the list and this button four
+       pixels apart, which is one tap target wearing two hats - and the button
+       is the heavier of the two to look at, so the eye goes there while the
+       thumb is aiming at the word. The space is the fix; the line above it
+       says why the button is there, and marks where the results stopped. */
+    '.add-offer{margin-top:24px}',
+    '.add-offer-cap{color:var(--muted);font-size:.86rem;margin:0 0 6px;padding:0 2px}',
     '.rec-head h2{font-size:1.35rem;font-weight:650;letter-spacing:-.02em;margin:0 0 4px}',
     // the live view. No border-radius or overflow clipping around a video, and
     // no fixed ancestor anywhere above it.
@@ -1220,25 +1227,42 @@ async function openAddWord(word) {
    the dictionary wants "Record your own" instead. That is the better place for
    it: it explains, where a missing button only puzzled. */
 
-function offerAdd(box, word) {
+/* `caption` only where the screen has not already said it. After a list, the
+   line is what separates the end of the results from something that is not a
+   result. After "No match for ...", it would be saying it twice. */
+function offerAdd(box, word, caption) {
   if (!state.enabled) return;
   if (!fb || !fb.auth || !fb.auth.currentUser) return;
   word = (word || '').trim();
+
+  /* Its own block, so the space above belongs to the offer rather than to the
+     button. rec-offer is shared with the word view and the withdraw control,
+     and neither of those wants to be pushed down. */
+  const wrap = document.createElement('div');
+  wrap.className = 'add-offer';
+
+  if (caption) {
+    const cap = document.createElement('p');
+    cap.className = 'add-offer-cap';
+    cap.textContent = 'Word not found in the list?';
+    wrap.appendChild(cap);
+  }
 
   const b = document.createElement('button');
   b.type = 'button';
   b.className = 'btn rec-offer';
   b.textContent = 'Add a word and record it';
   b.addEventListener('click', function () { openAddWord(word); });
-  box.appendChild(b);
+  wrap.appendChild(b);
+  box.appendChild(wrap);
 }
 
 if (window.SignCards) {
   /* Something found, but perhaps not the thing you were after. */
-  window.SignCards.onResultsEnd = function (box, query) { offerAdd(box, query); };
+  window.SignCards.onResultsEnd = function (box, query) { offerAdd(box, query, true); };
 
-  /* Nothing found at all. */
-  window.SignCards.onNoMatch = function (box, query) { offerAdd(box, query); };
+  /* Nothing found at all, and the screen has already said so. */
+  window.SignCards.onNoMatch = function (box, query) { offerAdd(box, query, false); };
 }
 
 /* ---------------- withdrawing a clip ----------------
