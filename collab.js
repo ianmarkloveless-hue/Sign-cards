@@ -248,14 +248,10 @@ function styleOnce() {
     // the tab bar would be a way out of a half-finished recording
     'body.is-recording .tabs{display:none}',
     '.rec-head{margin:6px 0 14px}',
-    /* The quiet offer at the end of a result list. A line of text, not a
-       button: something was found, so the list is the answer and this is the
-       footnote. Full width so the tap target is still a comfortable size. */
-    '.rec-offer-quiet{display:block;width:100%;background:none;border:0;'
-      + 'color:var(--muted);font:inherit;font-size:.86rem;text-align:left;'
-      + 'padding:14px 2px 4px;text-decoration:underline;text-underline-offset:3px;'
-      + 'cursor:pointer}',
-    '.rec-offer-quiet:hover{color:var(--text)}',
+    /* Already in the dictionary, and about to be added a second time. The
+       app's own red, the one the "no" answer and the danger buttons use,
+       rather than a second red that means the same thing. */
+    '.aw-warn{color:var(--no);font-size:.86rem;line-height:1.5;margin:-4px 0 14px}',
     '.rec-head h2{font-size:1.35rem;font-weight:650;letter-spacing:-.02em;margin:0 0 4px}',
     // the live view. No border-radius or overflow clipping around a video, and
     // no fixed ancestor anywhere above it.
@@ -1076,7 +1072,7 @@ function buildAdd() {
     '<label class="field"><span>Word</span>' +
       '<input id="aw-word" type="text" autocapitalize="none" autocomplete="off" ' +
       'spellcheck="false"></label>' +
-    '<p class="muted" id="aw-warn" hidden></p>' +
+    '<p class="aw-warn" id="aw-warn" hidden></p>' +
     '<label class="field"><span>Definition</span>' +
       '<textarea id="aw-def" rows="3"></textarea></label>' +
     '<p class="muted" id="aw-source"></p>' +
@@ -1206,13 +1202,14 @@ async function openAddWord(word) {
    is inside "determination" and "undetermined", so the list comes back full
    and the no-match offer never appears.
 
-   Loudness follows certainty. Nothing found at all is a dead end, so the offer
-   is a button. A list that found something is not, so it is a quiet line at
-   the end - the word is probably there and tapping it is the right move, and a
-   second button under a live list would be easy to hit by mistake while still
-   typing. */
+   The same button in all three, reading the same way. A quieter line at the
+   end of a list was tried first, on the reasoning that a list which found
+   something is not a dead end - but quiet turned out to mean overlooked, and
+   three spellings of one offer is harder to recognise than one. The word
+   itself is not in the label either: it is in the field on the next screen,
+   where it can be corrected. */
 
-function offerAdd(box, word, quiet) {
+function offerAdd(box, word) {
   if (!state.enabled) return;
   if (!fb || !fb.auth || !fb.auth.currentUser) return;
   word = (word || '').trim();
@@ -1231,23 +1228,21 @@ function offerAdd(box, word, quiet) {
 
   const b = document.createElement('button');
   b.type = 'button';
-  b.className = quiet ? 'rec-offer-quiet' : 'btn rec-offer';
-  b.textContent = word
-    ? (quiet ? 'Not here? Add “' + word + '”' : 'Add “' + word + '” and record it')
-    : 'Add a word and record it';
+  b.className = 'btn rec-offer';
+  b.textContent = 'Add a word and record it';
   b.addEventListener('click', function () { openAddWord(word); });
   box.appendChild(b);
 }
 
 if (window.SignCards) {
-  /* Nothing found: a button. */
-  window.SignCards.onNoMatch = function (box, query) { offerAdd(box, query, false); };
+  /* Nothing typed yet, so nothing to carry across. */
+  window.SignCards.onEmptySearch = function (box) { offerAdd(box, ''); };
 
-  /* Nothing typed yet: a button, with no word to carry across. */
-  window.SignCards.onEmptySearch = function (box) { offerAdd(box, '', false); };
+  /* Something found, but perhaps not the thing you were after. */
+  window.SignCards.onResultsEnd = function (box, query) { offerAdd(box, query); };
 
-  /* Something found, but perhaps not the thing: a quiet line underneath. */
-  window.SignCards.onResultsEnd = function (box, query) { offerAdd(box, query, true); };
+  /* Nothing found at all. */
+  window.SignCards.onNoMatch = function (box, query) { offerAdd(box, query); };
 }
 
 /* ---------------- withdrawing a clip ----------------
