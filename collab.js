@@ -257,8 +257,9 @@ function styleOnce() {
        is the heavier of the two to look at, so the eye goes there while the
        thumb is aiming at the word. The space is the fix; the line above it
        says why the button is there, and marks where the results stopped. */
-    '.add-offer{margin-top:24px}',
-    '.add-offer-cap{color:var(--muted);font-size:.86rem;margin:0 0 6px;padding:0 2px}',
+    '.add-offer{margin-top:40px}',
+    '.add-offer-cap{color:var(--muted);font-size:.86rem;margin:0 0 8px;padding:0 2px;'
+      + 'text-align:center}',
     '.rec-head h2{font-size:1.35rem;font-weight:650;letter-spacing:-.02em;margin:0 0 4px}',
     // the live view. No border-radius or overflow clipping around a video, and
     // no fixed ancestor anywhere above it.
