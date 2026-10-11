@@ -9,7 +9,7 @@
   /* Shown in Settings, so it is possible to tell from the phone which build is
      running. Bump it when releasing, and tag the commit to match. The cache
      name in sw.js is a separate thing: that only tells the phone to refetch. */
-  var APP_VERSION = '1.12.5';
+  var APP_VERSION = '1.13.0';
 
   var FAV_KEY = 'signcards.favourites.v1';
   var SET_KEY = 'signcards.settings.v1';
@@ -297,19 +297,40 @@
        two string comparisons a word and reaches all of them. */
     var qs = q.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 
+    /* The scan runs to the end of the dictionary, and it is the collecting
+       rather than the looking that stops early.
+
+       It used to stop after 400 matches of any kind, which sounds generous
+       until the query is a short common string. The dictionary is in A-Z
+       order, and "in" sits inside abominable, absorbing, abstain and hundreds
+       more before the letter i: the cap was reached at word 3,056, and the
+       headword "in" is at 8,771. It was never looked at. The same went for
+       "on", "it" and "to" - ordinary words, invisible. "a" worked only
+       because words beginning with a come first.
+
+       Prefix matches are shown ahead of substring ones, so only the first
+       SHOW substring matches can ever appear and collecting more is waste.
+       Prefix matches are worth gathering well past that, because they are
+       sorted by length afterwards and the shortest is almost always the word
+       that was meant. Reading all 19,179 costs about a millisecond, against
+       an input that is already debounced. */
+    var SHOW = 60;          // how many results are ever displayed
+    var KEEP = 400;         // prefix matches gathered before sorting by length
+
     loadWords().then(function (list) {
       var starts = [], contains = [];
-      for (var i = 0; i < list.length && starts.length + contains.length < 400; i++) {
+      for (var i = 0; i < list.length; i++) {
+        if (starts.length >= KEEP && contains.length >= SHOW) break;
         var w = list[i][0].toLowerCase();
         var sl = list[i][1];
         /* else-if throughout, so a word matching both ways is still listed once. */
-        if (w === q || w.indexOf(q) === 0) starts.push(list[i]);
-        else if (qs && (sl === qs || sl.indexOf(qs) === 0)) starts.push(list[i]);
-        else if (w.indexOf(q) > -1) contains.push(list[i]);
-        else if (qs && sl.indexOf(qs) > -1) contains.push(list[i]);
+        if (w === q || w.indexOf(q) === 0) { if (starts.length < KEEP) starts.push(list[i]); }
+        else if (qs && (sl === qs || sl.indexOf(qs) === 0)) { if (starts.length < KEEP) starts.push(list[i]); }
+        else if (w.indexOf(q) > -1) { if (contains.length < SHOW) contains.push(list[i]); }
+        else if (qs && sl.indexOf(qs) > -1) { if (contains.length < SHOW) contains.push(list[i]); }
       }
       starts.sort(function (a, b) { return a[0].length - b[0].length; });
-      var hits = starts.concat(contains).slice(0, 60);
+      var hits = starts.concat(contains).slice(0, SHOW);
 
       if (!hits.length) {
         box.innerHTML = '<p class="hint">No match for &ldquo;' + esc(raw.trim()) + '&rdquo;. ' +
