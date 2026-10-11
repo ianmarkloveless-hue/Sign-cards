@@ -9,7 +9,7 @@
   /* Shown in Settings, so it is possible to tell from the phone which build is
      running. Bump it when releasing, and tag the commit to match. The cache
      name in sw.js is a separate thing: that only tells the phone to refetch. */
-  var APP_VERSION = '1.13.0';
+  var APP_VERSION = '1.13.1';
 
   var FAV_KEY = 'signcards.favourites.v1';
   var SET_KEY = 'signcards.settings.v1';
@@ -457,6 +457,19 @@
     wrap.className = 'vid';
 
     var v = document.createElement('video');
+    /* Muted and inline BEFORE the source, not after. iOS decides whether a
+       video is allowed to play without being asked at the moment it starts
+       loading, and a clip that was not yet muted when that happened is
+       refused - even though the property is set a line later. */
+    v.loop = true;
+    v.muted = true;
+    v.defaultMuted = true;
+    v.playsInline = true;
+    v.setAttribute('playsinline', '');
+    v.setAttribute('webkit-playsinline', '');
+    v.setAttribute('muted', '');
+    v.preload = autoplay ? 'auto' : 'metadata';
+
     /* The #t fragment makes the browser paint that frame as a still rather than
        leaving a black box until the clip is played. Never on a blob: URL: iOS
        rejects the whole source with MEDIA_ERR_SRC_NOT_SUPPORTED when a
@@ -464,13 +477,6 @@
        download to wait through anyway. */
     var src = videoUrl(u);
     v.src = src.slice(0, 5) === 'blob:' ? src : src + '#t=0.001';
-    v.loop = true;
-    v.muted = true;
-    v.playsInline = true;
-    v.setAttribute('playsinline', '');
-    v.setAttribute('webkit-playsinline', '');
-    v.setAttribute('muted', '');
-    v.preload = autoplay ? 'auto' : 'metadata';
     wrap.appendChild(v);
 
     var tap = document.createElement('button');
@@ -487,7 +493,21 @@
       else v.pause();
     });
 
-    if (autoplay) v.play().catch(function () {});
+    /* After the caller has put this in the page, never before. Every caller
+       appends the wrapper once makeVideo has returned, so asking to play here
+       and now asks it of a video that is not in the document yet. Desktop
+       browsers allow that and start playing on attach; iOS does not reliably,
+       which is why a recorded clip sat waiting for a tap on the phone while
+       autoplaying on everything I could test it on.
+
+       A timeout rather than requestAnimationFrame: a frame callback does not
+       fire dependably while this screen is still being built, which is the
+       same trap the recorder's own frame loop fell into. */
+    if (autoplay) {
+      setTimeout(function () {
+        if (v.isConnected) v.play().catch(function () {});
+      }, 0);
+    }
     return { wrap: wrap, video: v };
   }
 
