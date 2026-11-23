@@ -9,7 +9,7 @@
   /* Shown in Settings, so it is possible to tell from the phone which build is
      running. Bump it when releasing, and tag the commit to match. The cache
      name in sw.js is a separate thing: that only tells the phone to refetch. */
-  var APP_VERSION = '1.14.0';
+  var APP_VERSION = '1.14.1';
 
   var FAV_KEY = 'signcards.favourites.v1';
   var SET_KEY = 'signcards.settings.v1';
@@ -1504,11 +1504,22 @@
   var pasteText = '';           // survives the box being rebuilt on every keystroke
 
   /* Separators a handout actually uses. Never the hyphen-minus: "Break-in"
-     and "non-verbal" are single words and splitting on it would lose both. */
+     and "non-verbal" are single words and splitting on it would lose both.
+     Space is conditional - see below. */
   function splitList(text) {
-    return String(text || '')
-      .split(/[\n\r\t,;|\u00b7\u2022\u2023\u25cf\u25aa\u2013\u2014]+/)
+    var s = String(text || '');
+    /* A list with no separator in it at all is one long run of words, and
+       taking it whole means matching nothing. Only then is a space treated as
+       a separator - never otherwise, because a delimited list is full of
+       entries that are two words on purpose, and splitting those would turn
+       "police officer" into police and officer. */
+    var seps = /[\n\r\t,;|\u00b7\u2022\u2023\u25cf\u25aa\u2013\u2014]/;
+    var re = seps.test(s) ? /[\n\r\t,;|\u00b7\u2022\u2023\u25cf\u25aa\u2013\u2014]+/ : /\s+/;
+    return s.split(re)
       .map(function (t) { return t.replace(/\s+/g, ' ').trim(); })
+      /* Punctuation the prose came wrapped in, but not the letters: a bare
+         character class would eat the accent off "café". */
+      .map(function (t) { return t.replace(/^[.,;:!?"'()[\]]+|[.,;:!?"'()[\]]+$/g, ''); })
       .filter(function (t) { return t && (/[a-z]/i.test(t) || t.length >= 3); });
   }
 
