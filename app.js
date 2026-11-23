@@ -9,7 +9,7 @@
   /* Shown in Settings, so it is possible to tell from the phone which build is
      running. Bump it when releasing, and tag the commit to match. The cache
      name in sw.js is a separate thing: that only tells the phone to refetch. */
-  var APP_VERSION = '1.13.1';
+  var APP_VERSION = '1.14.0';
 
   var FAV_KEY = 'signcards.favourites.v1';
   var SET_KEY = 'signcards.settings.v1';
@@ -1414,6 +1414,138 @@
     addStarter(true);
   });
 
+  /* Stars a list of slugs, taking the first clip of the first sense for each.
+     The starter deck and a pasted list both come through here, so there is one
+     place that decides what a card made in bulk looks like.
+
+     The first clip, note, not a chosen one. Starring from a word view is a
+     judgement - you watch two or three and keep the clearest. This cannot be,
+     and the clip can be swapped afterwards from the word itself. */
+  function addSlugs(wanted) {
+    var letters = {};
+    wanted.forEach(function (s) { letters[letterOf(s)] = true; });
+    return Promise.all(Object.keys(letters).map(loadShard)).then(function () {
+      var added = 0;
+      wanted.forEach(function (slug) {
+        var entry = (shards[letterOf(slug)] || {})[slug];
+        if (!entry || !entry.senses || !entry.senses.length) return;
+        var sense = entry.senses[0];
+        var vid = (sense.videos || [])[0];
+        if (!vid) return;
+        var id = slug + '#' + (vid.id || vid.u);
+        if (favs[id]) return;
+        favs[id] = newCard(id, entry.word || slug, slug, vid, sense.def || '');
+        added++;
+      });
+      saveFavs();
+      renderDeck();
+      return added;
+    });
+  }
+
+  /* ---------------- a pasted list of words ----------------
+
+     A week's vocabulary arrives as a handout or a slide, and starring forty
+     words one search at a time is most of the work of keeping a deck. This
+     takes the list as it comes.
+
+     What it does NOT do is guess. Everything is shown first - what would be
+     added, what is already held, and what the dictionary does not have - and
+     nothing is written until that has been read. The last of those three is
+     worth as much as the first: it is the list of words that need recording. */
+
+  var bulkPlan = null;          // what the preview offered, awaiting a yes
+
+  /* Separators a handout actually uses. Never the hyphen-minus: "Break-in"
+     and "non-verbal" are single words and splitting on it would lose both. */
+  function splitList(text) {
+    return String(text || '')
+      .split(/[\n\r\t,;|\u00b7\u2022\u2023\u25cf\u25aa\u2013\u2014]+/)
+      .map(function (t) { return t.replace(/\s+/g, ' ').trim(); })
+      .filter(function (t) { return t && (/[a-z]/i.test(t) || t.length >= 3); });
+  }
+
+  /* Sorts a list into what can be starred, what already is, and what is not
+     in the dictionary. Matches the spelling first and the slug second, the
+     same two ways search looks - so a word filed as "acorns" is still found
+     by typing "acorn". */
+  function matchList(names) {
+    var byWord = Object.create(null), bySlug = Object.create(null);
+    for (var i = 0; i < words.length; i++) {
+      var k = words[i][0].toLowerCase();
+      if (!Object.prototype.hasOwnProperty.call(byWord, k)) byWord[k] = words[i][1];
+      bySlug[words[i][1]] = true;
+    }
+    var have = deckSlugs();
+    var seen = Object.create(null);
+    var add = [], already = [], missing = [];
+    names.forEach(function (name) {
+      var low = name.toLowerCase();
+      if (Object.prototype.hasOwnProperty.call(seen, low)) return;   // the same word twice
+      seen[low] = true;
+      var slug = Object.prototype.hasOwnProperty.call(byWord, low) ? byWord[low] : null;
+      if (!slug) {
+        var sl = low.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+        if (sl && Object.prototype.hasOwnProperty.call(bySlug, sl)) slug = sl;
+      }
+      if (!slug) missing.push(name);
+      else if (have[slug]) already.push(name);
+      else add.push({ word: name, slug: slug });
+    });
+    return { add: add, already: already, missing: missing };
+  }
+
+  function bulkLine(label, list, n) {
+    if (!list.length) return '';
+    var shown = list.slice(0, n).join(', ');
+    return '<li>' + label + ': ' + esc(shown) + (list.length > n ? ', and ' +
+      (list.length - n) + ' more' : '') + '</li>';
+  }
+
+  function showBulkPlan() {
+    var raw = $('#bulk-text').value;
+    var names = splitList(raw);
+    var plan = $('#bulk-plan');
+    if (!names.length) { toast('Paste some words first'); return; }
+
+    loadWords().then(function () {
+      var r = matchList(names);
+      bulkPlan = r;
+      $('#bulk-summary').innerHTML = '<b>' + r.add.length + '</b> would be added to your deck. '
+        + (r.already.length ? '<b>' + r.already.length + '</b> you already have. ' : '')
+        + (r.missing.length ? '<b>' + r.missing.length + '</b> are not in the dictionary.' : '');
+      $('#bulk-examples').innerHTML =
+        bulkLine('Would add', r.add.map(function (x) { return x.word; }), 12)
+        + bulkLine('Already in your deck', r.already, 8)
+        + bulkLine('Not in the dictionary, so you would have to record these', r.missing, 20);
+      $('#bulk-go').disabled = !r.add.length;
+      plan.hidden = false;
+      plan.scrollIntoView({ block: 'nearest' });
+    }).catch(function () { toast('Build the dictionary first (see Settings).'); });
+  }
+
+  function hideBulkPlan() {
+    bulkPlan = null;
+    $('#bulk-plan').hidden = true;
+  }
+
+  $('#btn-bulk').addEventListener('click', showBulkPlan);
+  $('#bulk-cancel').addEventListener('click', hideBulkPlan);
+  $('#bulk-go').addEventListener('click', function () {
+    if (!bulkPlan || !bulkPlan.add.length) return;
+    var wanted = bulkPlan.add.map(function (x) { return x.slug; });
+    var btn = $('#bulk-go');
+    btn.disabled = true;
+    btn.textContent = 'Adding…';
+    addSlugs(wanted).then(function (added) {
+      btn.disabled = false;
+      btn.textContent = 'Add them to my deck';
+      hideBulkPlan();
+      $('#bulk-text').value = '';
+      toast(added ? 'Added ' + added + ' cards' : 'Nothing to add');
+    });
+  });
+
   function addStarter(announce) {
     return fetch('./data/starter-deck.json')
       .then(function (r) { return r.json(); })
@@ -1423,24 +1555,7 @@
         words.forEach(function (p) { byWord[p[0].toLowerCase()] = p[1]; });
         var wanted = list.map(function (w) { return byWord[String(w).toLowerCase()]; })
                          .filter(Boolean);
-        var letters = {};
-        wanted.forEach(function (s) { letters[letterOf(s)] = true; });
-
-        return Promise.all(Object.keys(letters).map(loadShard)).then(function () {
-          var added = 0;
-          wanted.forEach(function (slug) {
-            var entry = (shards[letterOf(slug)] || {})[slug];
-            if (!entry || !entry.senses || !entry.senses.length) return;
-            var sense = entry.senses[0];
-            var vid = (sense.videos || [])[0];
-            if (!vid) return;
-            var id = slug + '#' + (vid.id || vid.u);
-            if (favs[id]) return;
-            favs[id] = newCard(id, entry.word || slug, slug, vid, sense.def || '');
-            added++;
-          });
-          saveFavs();
-          renderDeck();
+        return addSlugs(wanted).then(function (added) {
           if (announce) toast(added ? 'Added ' + added + ' cards' : 'Already in your deck');
           return added;
         });
