@@ -9,7 +9,7 @@
   /* Shown in Settings, so it is possible to tell from the phone which build is
      running. Bump it when releasing, and tag the commit to match. The cache
      name in sw.js is a separate thing: that only tells the phone to refetch. */
-  var APP_VERSION = '1.14.1';
+  var APP_VERSION = '1.15.0';
 
   var FAV_KEY = 'signcards.favourites.v1';
   var SET_KEY = 'signcards.settings.v1';
@@ -1008,6 +1008,28 @@
       answers.appendChild(no);
       answers.appendChild(yes);
       body.appendChild(answers);
+
+      /* A way out to the word itself, for when the sign in front of you looks
+         wrong. The word view lists every clip there is with a star on each, so
+         a poor one can be unstarred and a better one kept without leaving the
+         thought behind.
+
+         Only once the answer is showing. In productive mode the clips are the
+         answer, and a way to them before you have tried would be a way to
+         cheat rather than a way to judge.
+
+         Nothing is graded on the way out: the card stays where it is and comes
+         round again, which for a card you are unsure of is soon. */
+      var alt = document.createElement('button');
+      alt.className = 'btn btn-quiet see-alts';
+      alt.type = 'button';
+      alt.textContent = 'See alternatives';
+      alt.addEventListener('click', function () {
+        var tab = document.querySelector('.tab[data-screen="search"]');
+        if (tab) tab.click();
+        openWord(card.slug, card.word);
+      });
+      body.appendChild(alt);
     }
 
     var d = deckIn(settings.practiseCat);
