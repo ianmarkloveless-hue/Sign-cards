@@ -164,6 +164,17 @@ button:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(-
 }
 .hint{color:var(--muted);font-size:.86rem;padding:26px 2px;max-width:34em}
 
+/* The paste box on the empty search screen. A rule above it, because it is a
+   second way of using this tab rather than more of the hint. */
+.paste{margin-top:14px;padding-top:18px;border-top:1px solid var(--line)}
+.paste h2{font-size:1rem;font-weight:620;margin:0 0 6px}
+.paste p.muted{margin:0 0 10px}
+.paste .btn{width:100%}
+.bulk-plan{margin-top:16px}
+.bulk-plan h2{font-size:1rem;font-weight:620;margin:0 0 6px}
+.bulk-plan ul{margin-top:12px}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
 /* ---------- explore ---------- */
 /* The controls stay put while the word scrolls, so stepping through a category
    never means scrolling back up to reach the arrows. */
