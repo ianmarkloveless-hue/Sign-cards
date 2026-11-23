@@ -9,7 +9,7 @@
   /* Shown in Settings, so it is possible to tell from the phone which build is
      running. Bump it when releasing, and tag the commit to match. The cache
      name in sw.js is a separate thing: that only tells the phone to refetch. */
-  var APP_VERSION = '1.13.1';
+  var APP_VERSION = '1.14.0';
 
   var FAV_KEY = 'signcards.favourites.v1';
   var SET_KEY = 'signcards.settings.v1';
@@ -289,6 +289,10 @@
 
     if (q.length < 1) { box.innerHTML = emptySearch(); return; }
 
+    /* Searching is leaving the empty screen, so a plan offered there is stale
+       by the time you come back to it. */
+    bulkPlan = null;
+
     /* The same query written as a slug, so that what is typed can be matched
        against how a word is filed as well as how it is spelt. 737 of the 19,179
        words are filed under something other than their spelling, and none of
@@ -367,9 +371,51 @@
     }).catch(function () { box.innerHTML = noIndexMessage(); });
   }
 
+  /* The empty search screen. It used to be one line of hint above half a
+     screen of nothing, which is where the paste box now goes: the moment to
+     put a week's list in is before you have started looking anything up, and
+     the moment you type it is out of the way again.
+
+     Rebuilt rather than kept, because runSearch replaces this whole box on
+     every keystroke. What has been typed into it is held in pasteText so that
+     clearing the search field does not throw a pasted list away. */
   function emptySearch() {
+    if (bulkPlan) return pasteBlock() + planBlock(bulkPlan);
     return '<p class="hint">Type a word to see how it is signed. Tap the star under any video to ' +
-      'put it in your deck.</p>';
+      'put it in your deck.</p>' + pasteBlock();
+  }
+
+  function pasteBlock() {
+    return '<div class="paste">'
+      + '<h2>Or add a whole list</h2>'
+      + '<p class="muted">Paste a week&rsquo;s vocabulary from a handout or a slide. Commas, new '
+      + 'lines, bullets and dashes all work, so it can go in as it comes.</p>'
+      + '<label class="field"><span class="sr-only">Words</span>'
+      + '<textarea id="bulk-text" rows="4" spellcheck="false" '
+      + 'placeholder="police officer, detective, witness, crime scene&hellip;">'
+      + esc(pasteText) + '</textarea></label>'
+      + '<button id="btn-bulk" class="btn" type="button">See what this would add</button>'
+      + '</div>';
+  }
+
+  /* The decision sits above the three lists, not below them. The lists run to
+     several lines on a real week and would otherwise push the only button that
+     matters off the bottom of the screen. */
+  function planBlock(r) {
+    return '<div class="panel plan bulk-plan">'
+      + '<h2>Add these words?</h2>'
+      + '<p id="plan-summary"><b>' + r.add.length + '</b> would be added to your deck. '
+      + (r.already.length ? '<b>' + r.already.length + '</b> you already have. ' : '')
+      + (r.missing.length ? '<b>' + r.missing.length + '</b> '
+          + (r.missing.length === 1 ? 'is' : 'are') + ' not in the dictionary.' : '')
+      + '</p>'
+      + (r.add.length ? '<button id="bulk-go" class="btn btn-save" type="button">Add them to my deck</button>' : '')
+      + '<button id="bulk-cancel" class="btn btn-quiet" type="button">Cancel</button>'
+      + '<ul class="muted">'
+      + bulkLine('Would add', r.add.map(function (x) { return x.word; }), 10)
+      + bulkLine('Already in your deck', r.already, 6)
+      + bulkLine('Not in the dictionary, so you would have to record these', r.missing, 8)
+      + '</ul></div>';
   }
 
   function noIndexMessage() {
@@ -1414,6 +1460,169 @@
     addStarter(true);
   });
 
+  /* Stars a list of slugs, taking the first clip of the first sense for each.
+     The starter deck and a pasted list both come through here, so there is one
+     place that decides what a card made in bulk looks like.
+
+     The first clip, note, not a chosen one. Starring from a word view is a
+     judgement - you watch two or three and keep the clearest. This cannot be,
+     and the clip can be swapped afterwards from the word itself. */
+  function addSlugs(wanted) {
+    var letters = {};
+    wanted.forEach(function (s) { letters[letterOf(s)] = true; });
+    return Promise.all(Object.keys(letters).map(loadShard)).then(function () {
+      var added = 0;
+      wanted.forEach(function (slug) {
+        var entry = (shards[letterOf(slug)] || {})[slug];
+        if (!entry || !entry.senses || !entry.senses.length) return;
+        var sense = entry.senses[0];
+        var vid = (sense.videos || [])[0];
+        if (!vid) return;
+        var id = slug + '#' + (vid.id || vid.u);
+        if (favs[id]) return;
+        favs[id] = newCard(id, entry.word || slug, slug, vid, sense.def || '');
+        added++;
+      });
+      saveFavs();
+      renderDeck();
+      return added;
+    });
+  }
+
+  /* ---------------- a pasted list of words ----------------
+
+     A week's vocabulary arrives as a handout or a slide, and starring forty
+     words one search at a time is most of the work of keeping a deck. This
+     takes the list as it comes.
+
+     What it does NOT do is guess. Everything is shown first - what would be
+     added, what is already held, and what the dictionary does not have - and
+     nothing is written until that has been read. The last of those three is
+     worth as much as the first: it is the list of words that need recording. */
+
+  var bulkPlan = null;          // what the preview offered, awaiting a yes
+  var pasteText = '';           // survives the box being rebuilt on every keystroke
+
+  /* Separators a handout actually uses. Never the hyphen-minus: "Break-in"
+     and "non-verbal" are single words and splitting on it would lose both. */
+  function splitList(text) {
+    return String(text || '')
+      .split(/[\n\r\t,;|\u00b7\u2022\u2023\u25cf\u25aa\u2013\u2014]+/)
+      .map(function (t) { return t.replace(/\s+/g, ' ').trim(); })
+      .filter(function (t) { return t && (/[a-z]/i.test(t) || t.length >= 3); });
+  }
+
+  /* Sorts a list into what can be starred, what already is, and what is not
+     in the dictionary. Matches the spelling first and the slug second, the
+     same two ways search looks - so a word filed as "acorns" is still found
+     by typing "acorn". */
+  function matchList(names) {
+    var byWord = Object.create(null), bySlug = Object.create(null);
+    for (var i = 0; i < words.length; i++) {
+      var k = words[i][0].toLowerCase();
+      if (!Object.prototype.hasOwnProperty.call(byWord, k)) byWord[k] = words[i][1];
+      bySlug[words[i][1]] = true;
+    }
+    var have = deckSlugs();
+    var seen = Object.create(null);
+    var add = [], already = [], missing = [];
+    names.forEach(function (name) {
+      var low = name.toLowerCase();
+      if (Object.prototype.hasOwnProperty.call(seen, low)) return;   // the same word twice
+      seen[low] = true;
+      var slug = Object.prototype.hasOwnProperty.call(byWord, low) ? byWord[low] : null;
+      if (!slug) {
+        var sl = low.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+        if (sl && Object.prototype.hasOwnProperty.call(bySlug, sl)) slug = sl;
+      }
+      if (!slug) missing.push(name);
+      else if (have[slug]) already.push(name);
+      else add.push({ word: name, slug: slug });
+    });
+    return { add: add, already: already, missing: missing };
+  }
+
+  function bulkLine(label, list, n) {
+    if (!list.length) return '';
+    var shown = list.slice(0, n).join(', ');
+    return '<li>' + label + ': ' + esc(shown) + (list.length > n ? ', and ' +
+      (list.length - n) + ' more' : '') + '</li>';
+  }
+
+  function showBulkPlan() {
+    var ta = $('#bulk-text');
+    if (!ta) return;
+    pasteText = ta.value;
+    var names = splitList(pasteText);
+    if (!names.length) { toast('Paste some words first'); return; }
+
+    loadWords().then(function () {
+      bulkPlan = matchList(names);
+      $('#search-results').innerHTML = emptySearch();
+      $('#search-results').scrollIntoView({ block: 'start' });
+    }).catch(function () { toast('Build the dictionary first (see Settings).'); });
+  }
+
+  function hideBulkPlan() {
+    bulkPlan = null;
+    $('#search-results').innerHTML = emptySearch();
+  }
+
+  /* Delegated, because runSearch rewrites this box on every keystroke and a
+     listener bound to the button inside it would be thrown away with it. */
+  $('#search-results').addEventListener('click', function (e) {
+    var t = e.target;
+    if (!t || !t.id) return;
+    if (t.id === 'btn-bulk') { showBulkPlan(); return; }
+    if (t.id === 'bulk-cancel') { hideBulkPlan(); return; }
+    if (t.id === 'bulk-go') {
+      if (!bulkPlan || !bulkPlan.add.length) return;
+      var wanted = bulkPlan.add.map(function (x) { return x.slug; });
+      t.disabled = true;
+      t.textContent = 'Adding…';
+      addSlugs(wanted).then(function (added) {
+        bulkPlan = null;
+        pasteText = '';
+        $('#search-results').innerHTML = emptySearch();
+        toast(added ? 'Added ' + added + ' cards' : 'Nothing to add');
+      });
+    }
+  });
+
+  /* Keep what has been typed, so clearing the search field does not lose it. */
+  $('#search-results').addEventListener('input', function (e) {
+    if (e.target && e.target.id === 'bulk-text') pasteText = e.target.value;
+  });
+
+  /* Stars a list of slugs, taking the first clip of the first sense for each.
+     The starter deck and a pasted list both come through here, so there is one
+     place that decides what a card made in bulk looks like.
+
+     The first clip, note, not a chosen one. Starring from a word view is a
+     judgement - you watch two or three and keep the clearest. This cannot be,
+     and the clip can be swapped afterwards from the word itself. */
+  function addSlugs(wanted) {
+    var letters = {};
+    wanted.forEach(function (s) { letters[letterOf(s)] = true; });
+    return Promise.all(Object.keys(letters).map(loadShard)).then(function () {
+      var added = 0;
+      wanted.forEach(function (slug) {
+        var entry = (shards[letterOf(slug)] || {})[slug];
+        if (!entry || !entry.senses || !entry.senses.length) return;
+        var sense = entry.senses[0];
+        var vid = (sense.videos || [])[0];
+        if (!vid) return;
+        var id = slug + '#' + (vid.id || vid.u);
+        if (favs[id]) return;
+        favs[id] = newCard(id, entry.word || slug, slug, vid, sense.def || '');
+        added++;
+      });
+      saveFavs();
+      renderDeck();
+      return added;
+    });
+  }
+
   function addStarter(announce) {
     return fetch('./data/starter-deck.json')
       .then(function (r) { return r.json(); })
@@ -1423,24 +1632,7 @@
         words.forEach(function (p) { byWord[p[0].toLowerCase()] = p[1]; });
         var wanted = list.map(function (w) { return byWord[String(w).toLowerCase()]; })
                          .filter(Boolean);
-        var letters = {};
-        wanted.forEach(function (s) { letters[letterOf(s)] = true; });
-
-        return Promise.all(Object.keys(letters).map(loadShard)).then(function () {
-          var added = 0;
-          wanted.forEach(function (slug) {
-            var entry = (shards[letterOf(slug)] || {})[slug];
-            if (!entry || !entry.senses || !entry.senses.length) return;
-            var sense = entry.senses[0];
-            var vid = (sense.videos || [])[0];
-            if (!vid) return;
-            var id = slug + '#' + (vid.id || vid.u);
-            if (favs[id]) return;
-            favs[id] = newCard(id, entry.word || slug, slug, vid, sense.def || '');
-            added++;
-          });
-          saveFavs();
-          renderDeck();
+        return addSlugs(wanted).then(function (added) {
           if (announce) toast(added ? 'Added ' + added + ' cards' : 'Already in your deck');
           return added;
         });
