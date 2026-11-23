@@ -232,7 +232,40 @@ if (ready) {
    finished clip plays in the app's own .clip wrapper.
    ====================================================================== */
 
-const OUT = [640, 480];
+/* What the camera is asked for, and the shape a camera clip ends up. The
+   sensor hands over whatever it likes - landscape however the phone is held -
+   so these frames are cropped to fill, and every card made this way is the
+   same shape as every other. */
+const CAM = [640, 480];
+
+/* Where the source is drawn, and how big the canvas has to be for it.
+
+   'fill' crops to CAM, which is right for the camera and wrong for anything
+   else. A video somebody else shot was framed on purpose: in a phone lesson
+   video the signing space runs from the top of the head to the hands at the
+   full width of the frame, and no landscape window holds that. Measured on a
+   576x1024 one, cropping to 640x480 keeps 42% of the height - the chest, and
+   not the head or the hands.
+
+   'keep' therefore crops nothing. The canvas takes the source's own shape,
+   scaled to about the pixel count of a camera clip so that the file size does
+   not move: 576x1024 comes out 416x740, which is 307,840 pixels against a
+   camera clip's 307,200. Both dimensions are rounded to even numbers because
+   H.264 encodes in 16x16 macroblocks and an odd one is refused. */
+function frameFor(vw, vh, mode) {
+  if (mode !== 'keep') {
+    const scale = Math.max(CAM[0] / vw, CAM[1] / vh);
+    return {
+      w: CAM[0], h: CAM[1],
+      dx: (CAM[0] - vw * scale) / 2, dy: (CAM[1] - vh * scale) / 2,
+      dw: vw * scale, dh: vh * scale
+    };
+  }
+  const scale = Math.sqrt((CAM[0] * CAM[1]) / (vw * vh));
+  const w = Math.max(2, Math.round(vw * scale / 2) * 2);
+  const h = Math.max(2, Math.round(vh * scale / 2) * 2);
+  return { w: w, h: h, dx: 0, dy: 0, dw: w, dh: h };
+}
 const SECS = 4;
 const ASK = 500000;
 const TYPES = ['video/mp4', 'video/mp4;codecs=avc1', 'video/webm'];
@@ -411,7 +444,7 @@ async function run(word) {
 
   try {
     rec.stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'user', width: { ideal: OUT[0] }, height: { ideal: OUT[1] } },
+      video: { facingMode: 'user', width: { ideal: CAM[0] }, height: { ideal: CAM[1] } },
       audio: false
     });
   } catch (e) {
@@ -426,12 +459,16 @@ async function run(word) {
   }
 
   rec.pv.srcObject = rec.stream;
+  rec.mode = 'fill';                     // the camera, so crop to the card shape
   try { await rec.pv.play(); } catch (e) { /* autoplay may refuse; frames still arrive */ }
 
-  rec.cv.width = OUT[0];
-  rec.cv.height = OUT[1];
   const ctx = rec.cv.getContext('2d');
   rec.drawing = true;
+  /* Sized on the first frame that reports a shape, not before: the source
+     decides, and until one has arrived there is nothing to decide from. It
+     happens well before captureStream is called, which is three seconds of
+     countdown away. */
+  rec.frame = null;
 
   /* A plain timer, deliberately. requestAnimationFrame and
      requestVideoFrameCallback are both tied to compositing and starve the
@@ -441,9 +478,13 @@ async function run(word) {
     if (!rec.drawing) return;
     const vw = rec.pv.videoWidth, vh = rec.pv.videoHeight;
     if (!vw || !vh) return;
-    const scale = Math.max(OUT[0] / vw, OUT[1] / vh);
-    ctx.drawImage(rec.pv, (OUT[0] - vw * scale) / 2, (OUT[1] - vh * scale) / 2,
-                  vw * scale, vh * scale);
+    if (!rec.frame) {
+      rec.frame = frameFor(vw, vh, rec.mode);
+      rec.cv.width = rec.frame.w;
+      rec.cv.height = rec.frame.h;
+    }
+    const f = rec.frame;
+    ctx.drawImage(rec.pv, f.dx, f.dy, f.dw, f.dh);
   }, 1000 / 30);
 
   await wait(300);                       // let a few frames land before capturing
