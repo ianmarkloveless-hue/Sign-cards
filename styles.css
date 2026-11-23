@@ -283,6 +283,12 @@ button:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(-
 .big-reveal{background:var(--surface-2);color:var(--text);border:1px solid var(--line);width:100%}
 .big-no{background:var(--no);color:#fff}
 .big-yes{background:var(--yes);color:#08210f}
+/* Well clear of the two answer buttons. They are 56px and the thumb is
+   already heading for one of them; a full-width button hard underneath would
+   be caught by mistake, which is the same trap the add-a-word button fell
+   into at four pixels from the last search result. */
+.see-alts{width:100%;margin-top:22px}
+
 .progress{color:var(--muted);font-size:.78rem;text-align:center}
 
 /* ---------- deck ---------- */
