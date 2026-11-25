@@ -9,7 +9,7 @@
   /* Shown in Settings, so it is possible to tell from the phone which build is
      running. Bump it when releasing, and tag the commit to match. The cache
      name in sw.js is a separate thing: that only tells the phone to refetch. */
-  var APP_VERSION = '1.17.0';
+  var APP_VERSION = '1.17.1';
 
   var FAV_KEY = 'signcards.favourites.v1';
   var SET_KEY = 'signcards.settings.v1';
@@ -652,6 +652,17 @@
     return String(name).toUpperCase();
   }
 
+  /* Two hard spaces in front of every option inside a group.
+
+     iOS draws its own wheel for a select and ignores what the stylesheet says
+     about the contents, so a heading cannot be made brighter or heavier than
+     the things under it - that was tried and it stayed faint. What is left is
+     contrast: set the items in from the edge and the heading is the only
+     thing flush left, which reads as a heading whoever is drawing it.
+
+     Ordinary spaces would not do; the markup collapses those. */
+  var INDENT = '  ';
+
   function fillCategories(sel, chosen, only, withRecent) {
     sel.innerHTML = '';
     var all = document.createElement('option');
@@ -670,7 +681,8 @@
         wins.forEach(function (w, i) {
           var o = document.createElement('option');
           o.value = 'recent-' + (i + 1);
-          o.textContent = 'Since ' + lessonLabel(w.at) + ' (' + w.count.toLocaleString() + ')';
+          o.textContent = INDENT + 'Since ' + lessonLabel(w.at)
+            + ' (' + w.count.toLocaleString() + ')';
           rg.appendChild(o);
         });
         sel.appendChild(rg);
@@ -687,7 +699,8 @@
       members.forEach(function (c) {
         var o = document.createElement('option');
         o.value = c.id;
-        o.textContent = c.name + ' (' + (only ? only[c.id] : c.idx.length).toLocaleString() + ')';
+        o.textContent = INDENT + c.name
+          + ' (' + (only ? only[c.id] : c.idx.length).toLocaleString() + ')';
         og.appendChild(o);
       });
       sel.appendChild(og);
