@@ -189,7 +189,14 @@ button:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(-
 .catselect{
   width:100%;appearance:none;-webkit-appearance:none;
   border:1px solid var(--line);background:var(--surface);color:var(--text);
-  font:inherit;font-size:1.05rem;padding:13px 40px 13px 15px;border-radius:var(--r);
+  font:inherit;font-size:.95rem;padding:13px 40px 13px 15px;border-radius:var(--r);
+  /* One line, always. With appearance:none this is an ordinary block and the
+     default white-space lets a long name wrap onto a second, which pushes the
+     control taller than everything beside it. It does not show at the sizes a
+     desktop emulator uses; it shows on a phone with the system text scaled up,
+     which is where it matters. Truncating is the lesser fault - the heading
+     above already says what the list is. */
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%2398a1bd' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");
   background-repeat:no-repeat;background-position:right 15px center;background-size:12px 8px;
 }
