@@ -197,6 +197,7 @@ button:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(-
      which is where it matters. Truncating is the lesser fault - the heading
      above already says what the list is. */
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  text-align:left;
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%2398a1bd' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");
   background-repeat:no-repeat;background-position:right 15px center;background-size:12px 8px;
 }
@@ -208,7 +209,16 @@ button:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(-
   color:var(--text);background:var(--surface-2);
   font-weight:700;font-style:normal;font-size:.82rem;letter-spacing:.06em;
 }
-.catselect option{color:var(--text);background:var(--surface);font-weight:400;letter-spacing:0}
+/* Left, not centred. iOS centres the rows in the wheel it draws for itself,
+   which wastes the width a long name needs and makes the leading spaces on a
+   grouped option count for nothing. Whether it listens is another matter -
+   it ignored the colour and the weight - but alignment is the one thing left
+   to ask for, since everything else here is already as short as it goes. */
+.catselect option{
+  color:var(--text);background:var(--surface);font-weight:400;letter-spacing:0;
+  text-align:left;
+}
+.catselect optgroup{text-align:left}
 
 .browse{display:flex;align-items:stretch;gap:10px;margin-top:10px}
 .step{
