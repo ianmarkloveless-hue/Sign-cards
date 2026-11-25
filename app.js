@@ -9,7 +9,7 @@
   /* Shown in Settings, so it is possible to tell from the phone which build is
      running. Bump it when releasing, and tag the commit to match. The cache
      name in sw.js is a separate thing: that only tells the phone to refetch. */
-  var APP_VERSION = '1.15.0';
+  var APP_VERSION = '1.16.1';
 
   var FAV_KEY = 'signcards.favourites.v1';
   var SET_KEY = 'signcards.settings.v1';
@@ -44,7 +44,7 @@
   var words = null;          // baseWords, then whatever the class has added
   var shards = {};           // letter -> {slug: entry}
   var favs = load(FAV_KEY, {});
-  var settings = load(SET_KEY, { mode: 'productive', starterLoaded: false });
+  var settings = load(SET_KEY, { mode: 'productive', starterLoaded: false, lessonDay: 1 });
 
   var current = null;        // card being practised
   var lastId = null;
@@ -642,12 +642,30 @@
   /* Fills a <select> with "All" plus each group of categories. `only` limits it
      to a set of ids, which is how practise and deck avoid offering a filter
      that would leave nothing to show. */
-  function fillCategories(sel, chosen, only) {
+  function fillCategories(sel, chosen, only, withRecent) {
     sel.innerHTML = '';
     var all = document.createElement('option');
     all.value = 'all';
     all.textContent = 'All — show me everything';
     sel.appendChild(all);
+
+    /* Practise only. Explore browses the whole dictionary, where "added to my
+       deck" means nothing, and the deck list is already in date order if you
+       want to see what arrived when. */
+    if (withRecent) {
+      var wins = recentWindows();
+      if (wins.length) {
+        var rg = document.createElement('optgroup');
+        rg.label = 'Since a lesson';
+        wins.forEach(function (w, i) {
+          var o = document.createElement('option');
+          o.value = 'recent-' + (i + 1);
+          o.textContent = 'Since ' + lessonLabel(w.at) + ' (' + w.count.toLocaleString() + ')';
+          rg.appendChild(o);
+        });
+        sel.appendChild(rg);
+      }
+    }
 
     ((cats && cats.groups) || []).forEach(function (g) {
       var members = cats.categories.filter(function (c) {
@@ -827,9 +845,86 @@
     return slugCats;
   }
 
+  /* ---------------- practising a lesson's worth ----------------
+
+     Lessons are on a Monday evening and the week's vocabulary is starred that
+     night or over the days after, so the useful question is not "the last
+     seven days" but "since the last lesson".
+
+     Anchoring to the Monday rather than counting back a fixed number of days
+     is what makes it hold still. Measured on a real fortnight, a fixed
+     eight-day window returned 16, then 89, 87, 85, 85, 73, 73, 73, nothing,
+     32 - changing on arbitrary days because it cuts through the middle of a
+     batch, and empty on the Wednesday because the previous week's words had
+     just aged out while the new ones had not arrived. Anchored, the same
+     fortnight holds 73 for nine days running and then steps to 32 when the
+     new words land.
+
+     A boundary with nothing after it is skipped. On a Monday before the
+     lesson, or before the words have been typed in, the most recent boundary
+     holding anything is last week's - which is the week you wanted anyway.
+     It is also what stops a cancelled lesson offering an empty deck. */
+
+  /* Which evening the lesson is on, chosen in Settings. The hour is not: an
+     evening class is the ordinary case, and a boundary at six means the day of
+     the lesson counts forward rather than being half over before it starts. */
+  var LESSON_HOUR = 18;
+
+  function lessonDay() {
+    var d = Number(settings.lessonDay);
+    return (d >= 0 && d <= 6) ? d : 1;        // Monday if never set, or set to nonsense
+  }
+
+  function lessonMarks(now, want) {
+    var out = [], probe = new Date(now);
+    for (var i = 0; i < 60 && out.length < want; i++) {
+      var back = (probe.getDay() - lessonDay() + 7) % 7;
+      var m = new Date(probe);
+      m.setDate(m.getDate() - back);
+      m.setHours(LESSON_HOUR, 0, 0, 0);
+      if (m.getTime() >= probe.getTime()) m.setDate(m.getDate() - 7);
+      out.push(m.getTime());
+      probe = new Date(m.getTime());
+    }
+    return out;
+  }
+
+  /* The three most recent lesson boundaries that have cards after them. Each
+     window contains the one before it, so once a boundary holds anything every
+     older one does too - the skipping only ever drops empty ones off the front. */
+  function recentWindows() {
+    var d = deck(), marks = lessonMarks(Date.now(), 30), out = [];
+    for (var i = 0; i < marks.length && out.length < 3; i++) {
+      var n = 0;
+      for (var j = 0; j < d.length; j++) if ((d[j].added || 0) >= marks[i]) n++;
+      if (!n) continue;
+      out.push({ at: marks[i], count: n });
+    }
+    return out;
+  }
+
+  /* "recent-1" rather than the timestamp, so that choosing it once keeps
+     meaning "since the last lesson" next week instead of silently falling
+     back to everything when that particular Monday scrolls out of range. */
+  function windowFor(catId) {
+    var k = Number(catId.slice(7));
+    return recentWindows()[k - 1] || null;
+  }
+
+  function lessonLabel(at) {
+    var d = new Date(at);
+    return d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+  }
+
   function deckIn(catId) {
     var d = deck();
-    if (!catId || catId === 'all' || !cats) return d;
+    if (!catId || catId === 'all') return d;
+    if (catId.slice(0, 7) === 'recent-') {
+      var w = windowFor(catId);
+      if (!w) return [];
+      return d.filter(function (card) { return (card.added || 0) >= w.at; });
+    }
+    if (!cats) return d;
     var map = buildSlugCats();
     return d.filter(function (card) {
       var list = map[card.slug];
@@ -1254,7 +1349,7 @@
      so choosing one can never leave the screen empty. */
   function openPractise() {
     return Promise.all([loadWords(), loadCats()]).then(function () {
-      settings.practiseCat = fillCategories($('#practise-cat'), settings.practiseCat, deckCatCounts());
+      settings.practiseCat = fillCategories($('#practise-cat'), settings.practiseCat, deckCatCounts(), true);
       saveSettings();
     }).catch(function (e) { console.error('practise filter:', e); }).then(function () {
       intakeLeft = INTAKE;      // opening the tab starts a session
@@ -1295,6 +1390,27 @@
   });
 
   /* ---------------- settings ---------------- */
+
+  /* The lesson day. Nothing needs redrawing when it changes: openPractise
+     refills its category list every time the tab is opened, and the windows
+     are worked out then. */
+  (function () {
+    var sel = $('#lesson-day');
+    if (!sel) return;
+    var names = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    names.forEach(function (name, i) {
+      var o = document.createElement('option');
+      o.value = String(i);
+      o.textContent = name;
+      sel.appendChild(o);
+    });
+    sel.value = String(lessonDay());
+    sel.addEventListener('change', function () {
+      settings.lessonDay = Number(sel.value);
+      saveSettings();
+      toast('Lessons on a ' + names[settings.lessonDay]);
+    });
+  })();
 
   $('#btn-export').addEventListener('click', function () {
     var blob = new Blob([JSON.stringify({ app: 'signcards', version: 1,
