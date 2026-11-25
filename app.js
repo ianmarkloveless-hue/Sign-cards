@@ -9,7 +9,7 @@
   /* Shown in Settings, so it is possible to tell from the phone which build is
      running. Bump it when releasing, and tag the commit to match. The cache
      name in sw.js is a separate thing: that only tells the phone to refetch. */
-  var APP_VERSION = '1.16.0';
+  var APP_VERSION = '1.16.1';
 
   var FAV_KEY = 'signcards.favourites.v1';
   var SET_KEY = 'signcards.settings.v1';
@@ -44,7 +44,7 @@
   var words = null;          // baseWords, then whatever the class has added
   var shards = {};           // letter -> {slug: entry}
   var favs = load(FAV_KEY, {});
-  var settings = load(SET_KEY, { mode: 'productive', starterLoaded: false });
+  var settings = load(SET_KEY, { mode: 'productive', starterLoaded: false, lessonDay: 1 });
 
   var current = null;        // card being practised
   var lastId = null;
@@ -865,13 +865,20 @@
      holding anything is last week's - which is the week you wanted anyway.
      It is also what stops a cancelled lesson offering an empty deck. */
 
-  var LESSON_DAY = 1;        // Monday
-  var LESSON_HOUR = 18;      // evening, so the day of the lesson counts forward
+  /* Which evening the lesson is on, chosen in Settings. The hour is not: an
+     evening class is the ordinary case, and a boundary at six means the day of
+     the lesson counts forward rather than being half over before it starts. */
+  var LESSON_HOUR = 18;
+
+  function lessonDay() {
+    var d = Number(settings.lessonDay);
+    return (d >= 0 && d <= 6) ? d : 1;        // Monday if never set, or set to nonsense
+  }
 
   function lessonMarks(now, want) {
     var out = [], probe = new Date(now);
     for (var i = 0; i < 60 && out.length < want; i++) {
-      var back = (probe.getDay() - LESSON_DAY + 7) % 7;
+      var back = (probe.getDay() - lessonDay() + 7) % 7;
       var m = new Date(probe);
       m.setDate(m.getDate() - back);
       m.setHours(LESSON_HOUR, 0, 0, 0);
@@ -1383,6 +1390,27 @@
   });
 
   /* ---------------- settings ---------------- */
+
+  /* The lesson day. Nothing needs redrawing when it changes: openPractise
+     refills its category list every time the tab is opened, and the windows
+     are worked out then. */
+  (function () {
+    var sel = $('#lesson-day');
+    if (!sel) return;
+    var names = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    names.forEach(function (name, i) {
+      var o = document.createElement('option');
+      o.value = String(i);
+      o.textContent = name;
+      sel.appendChild(o);
+    });
+    sel.value = String(lessonDay());
+    sel.addEventListener('change', function () {
+      settings.lessonDay = Number(sel.value);
+      saveSettings();
+      toast('Lessons on a ' + names[settings.lessonDay]);
+    });
+  })();
 
   $('#btn-export').addEventListener('click', function () {
     var blob = new Blob([JSON.stringify({ app: 'signcards', version: 1,
