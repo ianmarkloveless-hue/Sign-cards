@@ -9,7 +9,7 @@
   /* Shown in Settings, so it is possible to tell from the phone which build is
      running. Bump it when releasing, and tag the commit to match. The cache
      name in sw.js is a separate thing: that only tells the phone to refetch. */
-  var APP_VERSION = '1.16.1';
+  var APP_VERSION = '1.17.0';
 
   var FAV_KEY = 'signcards.favourites.v1';
   var SET_KEY = 'signcards.settings.v1';
@@ -642,6 +642,16 @@
   /* Fills a <select> with "All" plus each group of categories. `only` limits it
      to a set of ids, which is how practise and deck avoid offering a filter
      that would leave nothing to show. */
+  /* Group headings in a select, said out loud. Left alone they come out in
+     the browser's own style for an optgroup - grey, often italic - which on a
+     dark background reads as something switched off rather than as a heading.
+     The stylesheet fixes that where it is allowed to, but iOS draws its own
+     picker and ignores most of what it is told, so the capitals are in the
+     text itself where nothing can overrule them. */
+  function groupLabel(name) {
+    return String(name).toUpperCase();
+  }
+
   function fillCategories(sel, chosen, only, withRecent) {
     sel.innerHTML = '';
     var all = document.createElement('option');
@@ -656,7 +666,7 @@
       var wins = recentWindows();
       if (wins.length) {
         var rg = document.createElement('optgroup');
-        rg.label = 'Since a lesson';
+        rg.label = groupLabel('Since a lesson');
         wins.forEach(function (w, i) {
           var o = document.createElement('option');
           o.value = 'recent-' + (i + 1);
@@ -673,7 +683,7 @@
       });
       if (!members.length) return;
       var og = document.createElement('optgroup');
-      og.label = g.name;
+      og.label = groupLabel(g.name);
       members.forEach(function (c) {
         var o = document.createElement('option');
         o.value = c.id;
@@ -893,8 +903,8 @@
      window contains the one before it, so once a boundary holds anything every
      older one does too - the skipping only ever drops empty ones off the front. */
   function recentWindows() {
-    var d = deck(), marks = lessonMarks(Date.now(), 30), out = [];
-    for (var i = 0; i < marks.length && out.length < 3; i++) {
+    var d = deck(), marks = lessonMarks(Date.now(), 40), out = [];
+    for (var i = 0; i < marks.length && out.length < 4; i++) {
       var n = 0;
       for (var j = 0; j < d.length; j++) if ((d[j].added || 0) >= marks[i]) n++;
       if (!n) continue;
