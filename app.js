@@ -9,7 +9,7 @@
   /* Shown in Settings, so it is possible to tell from the phone which build is
      running. Bump it when releasing, and tag the commit to match. The cache
      name in sw.js is a separate thing: that only tells the phone to refetch. */
-  var APP_VERSION = '1.17.2';
+  var APP_VERSION = '1.17.3';
 
   var FAV_KEY = 'signcards.favourites.v1';
   var SET_KEY = 'signcards.settings.v1';
@@ -681,7 +681,11 @@
         wins.forEach(function (w, i) {
           var o = document.createElement('option');
           o.value = 'recent-' + (i + 1);
-          o.textContent = INDENT + 'Since ' + lessonLabel(w.at)
+          /* No "Since" on the row. The heading above says SINCE A LESSON
+             already, and on a phone those six characters were the difference
+             between one line and two: iOS wraps inside its own picker wheel,
+             where no stylesheet reaches. */
+          o.textContent = INDENT + lessonLabel(w.at)
             + ' (' + w.count.toLocaleString() + ')';
           rg.appendChild(o);
         });
